@@ -30,7 +30,7 @@ struct NewLabelFlow: View {
             Divider()
             footer
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Theme.appBackground)
         .sheet(item: $newMedia) { _ in
             ScrollView {
                 MediaEditor(media: Binding($newMedia)!, isNew: true, categories: library.categories) { saved in

@@ -126,6 +126,9 @@ TPrinter/
     Models/TextFit.swift                      text shrink-to-fit (drawn size, native TSPL font choice)
     Models/ImageImport.swift                  image file → image element (≤960 px PNG, fitted, line-art detect)
     Models/LabelSession+Elements.swift        element commands: duplicate, delete, arrange, align, update
+    Models/PDFLabels.swift                    PDF / image pages → one label each (rotate, trim, fit)
+    Models/PDFService.swift                   "Print with TPrinter" PDF ▾ menu entry (~/Library/PDF Services alias) + inbox
+    Views/PDFLabelsSheet.swift                "Print PDF Labels" window (session.showsPDFLabels)
     Models/ThumbnailCache.swift               content-hashed label thumbnails (Caches) + LabelThumbnail view
     Models/ElementClipboard.swift             copy/cut/paste elements + copy/paste style (system pasteboard)
     Views/ElementResize.swift                 resize-handle math, LabelAlignment, Arrangement, ElementGeometry
@@ -174,12 +177,18 @@ TPrinter/
   (unique name); "Choose Location…" → system save panel. `save()` returns false while that's pending.
 - iCloud Drive = the plain Finder folder ~/Library/Mobile Documents/com~apple~CloudDocs (no entitlements,
   no CloudKit). `LabelSession.relocateTemplatesFolder(to:)` moves every template and follows recents.
+- PDFs arrive via `AppDelegate.application(_:open:)` (print window PDF ▾ › Print with TPrinter, Open With)
+  → `LabelSession.receivePDFs` copies them to Caches/TPrinter/Incoming PDFs → Print PDF Labels sheet.
+  Info.plist declares PDF as a Viewer/Alternate document type for this.
 - Template previews in lists use `LabelThumbnail` (cached), not a live `LabelRenderView`.
 - New inspector section: add its title to `InspectorSections.table` (category, icon, search keywords)
   and to `InspectorSections.titles(for:)`.
 - Design: the canvas shows the label on its liner roll (neighbours ghosted, gap
   to scale) — that's the app's one bold visual; keep the rest native and quiet.
-  Colours live in `Theme`; selection uses the system accent colour.
+  Colours live in `Theme`; selection uses the system accent colour. Backgrounds: `Theme.appBackground`
+  (home, sheets) and `Theme.canvasDesk` (editor) — never `underPageBackgroundColor`, which is a flat
+  mid-grey in light mode. Menus whose label is a coloured badge: `.menuStyle(.button).buttonStyle(.plain)`
+  (`.borderlessButton` recolours the label in light mode).
 - Image elements store their (normalised PNG) bytes inside the template;
   `LabelElementView` shows the dithered result so preview = print. In Native
   TSPL mode images/icons are sent as per-element `BITMAP`s.

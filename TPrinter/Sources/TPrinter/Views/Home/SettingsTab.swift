@@ -10,7 +10,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .printers: "Printers"
         case .media: "Media"
-        case .printing: "Printing"
+        case .printing: "Print options"
         case .files: "Templates & files"
         case .about: "About"
         }
@@ -21,7 +21,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "Appearance, editor, notifications"
         case .printers: "Connect and manage printers"
         case .media: "Paper rolls and label sizes"
-        case .printing: "Print method and alignment"
+        case .printing: "Print method, alignment, print from websites"
         case .files: "Where templates are saved"
         case .about: "Version and support"
         }
@@ -55,7 +55,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "appearance theme dark light editor layers inspector notifications"
         case .printers: "bluetooth connect search rongta rp310 disconnect advanced console log command"
         case .media: "paper roll label size gap black mark continuous category"
-        case .printing: "method image native tspl alignment calibrate sensor darkness"
+        case .printing: "print options method image native tspl alignment calibrate sensor darkness pdf print window website browser steadfast courier"
         case .files: "templates folder recents data"
         case .about: "version build"
         }
@@ -436,6 +436,9 @@ private struct AdvancedPrinterSettings: View {
 private struct PrintingSettings: View {
     @EnvironmentObject private var bluetooth: PrinterBluetoothManager
     @EnvironmentObject private var session: LabelSession
+    @AppStorage(PDFService.enabledKey) private var pdfServiceEnabled = true
+    @AppStorage("pdfLabels.autoPrint") private var autoPrintPDFs = false
+    @State private var pdfServiceInstalled = PDFService.isInstalled
     @AppStorage("defaultPrintMethod") private var defaultMethod = PrintMethod.image.rawValue
     @State private var confirmsCalibration = false
 
@@ -449,6 +452,30 @@ private struct PrintingSettings: View {
                     }
                     .labelsHidden()
                     .fixedSize()
+                }
+            }
+            SettingsGroup(title: "Print from websites and other apps",
+                          footer: "In any print window (Steadfast, a browser, Preview …) click PDF ▾ at the bottom-left and choose "
+                            + "“\(PDFService.menuTitle)”. The labels open in Print PDF Labels with your saved label size and settings.") {
+                SettingsRow(title: "“\(PDFService.menuTitle)” in print windows",
+                            subtitle: pdfServiceInstalled ? "Added to the PDF ▾ menu" : "Not in the PDF ▾ menu",
+                            systemImage: "printer.dotmatrix") {
+                    Toggle("", isOn: Binding {
+                        pdfServiceEnabled && pdfServiceInstalled
+                    } set: { on in
+                        pdfServiceEnabled = on
+                        do {
+                            if on { try PDFService.install() } else { try PDFService.uninstall() }
+                        } catch {
+                            session.errorMessage = "Couldn't change the print window menu. \(error.localizedDescription)"
+                        }
+                        pdfServiceInstalled = PDFService.isInstalled
+                    })
+                    .toggleStyle(.switch).labelsHidden()
+                }
+                SettingsRow(title: "Print right away", subtitle: "Skip the preview: print as soon as the PDF arrives",
+                            systemImage: "bolt.fill") {
+                    Toggle("", isOn: $autoPrintPDFs).toggleStyle(.switch).labelsHidden()
                 }
             }
             SettingsGroup(title: "Alignment", footer: "Every job turns the printer's tear mode off, which keeps labels aligned on the RP310.") {

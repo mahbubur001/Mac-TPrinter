@@ -68,9 +68,33 @@ final class MediaLibrary: ObservableObject {
     @Published private(set) var media: [Media]
     private let file: JSONFile<[Media]>
 
-    init(directory: URL = AppStorageLocation.directory) {
+    init(directory: URL = AppStorageLocation.directory, defaults: UserDefaults = .standard) {
         file = JSONFile(url: directory.appendingPathComponent("media.json"))
-        media = file.load() ?? Media.starters
+        if let saved = file.load() {
+            media = saved
+            addLaterStarters(defaults: defaults)
+        } else {
+            media = Media.starters
+            defaults.set(Media.laterStarters, forKey: Self.offeredStartersKey) // already included
+        }
+    }
+
+    private static let offeredStartersKey = "mediaStartersOffered"
+
+    /// New built-in sizes for libraries created before they existed, each offered once.
+    private func addLaterStarters(defaults: UserDefaults) {
+        var offered = Set(defaults.stringArray(forKey: Self.offeredStartersKey) ?? [])
+        var changed = false
+        for name in Media.laterStarters where !offered.contains(name) {
+            offered.insert(name)
+            guard media(named: name) == nil, let starter = Media.starters.first(where: { $0.name == name }) else { continue }
+            // Next to the other media of its category.
+            let index = media.lastIndex { $0.category.caseInsensitiveCompare(starter.category) == .orderedSame }.map { $0 + 1 } ?? media.count
+            media.insert(starter, at: index)
+            changed = true
+        }
+        defaults.set(Array(offered).sorted(), forKey: Self.offeredStartersKey)
+        if changed { file.save(media) }
     }
 
     /// Categories in first-seen order.

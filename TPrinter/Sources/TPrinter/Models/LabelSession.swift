@@ -38,6 +38,18 @@ final class LabelSession: ObservableObject {
     @Published var settingsSection: SettingsSection = .media
     /// Set by "Define media": Settings › Media opens with a new, empty media.
     @Published var requestsNewMedia = false
+    /// The "Print PDF Labels" window (courier labels …), shown from anywhere by ContentView.
+    @Published var showsPDFLabels = false
+    /// PDFs handed over by a print window (PDF ▾ › Print with TPrinter) or Open With, waiting for
+    /// the Print PDF Labels window to pick them up.
+    @Published var incomingPDFs: [URL] = []
+
+    func receivePDFs(_ urls: [URL]) {
+        let kept = PDFService.keep(urls)
+        guard !kept.isEmpty else { return }
+        incomingPDFs += kept
+        showsPDFLabels = true
+    }
     /// The home screens (tabs). Shown at launch; opening or creating a label switches to the editor.
     var showsDashboard: Bool {
         get { if case .home = route { true } else { false } }

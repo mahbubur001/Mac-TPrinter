@@ -163,6 +163,12 @@ Two print methods:
 - [ ] Verify iCloud sync with a second Mac
 - [x] USB connection (IOUSBHost, printer-class interface, bulk OUT; auto-connect on plug-in, back to Bluetooth on unplug)
 - [ ] Verify USB printing on the RP310 (does it answer on bulk IN? pacing between jobs)
+- [x] Print PDF Labels (Dashboard tile, File › Print PDF Labels… ⌥⌘P): PDFs / images, one page per label,
+  auto-rotate, trim, fit, sharp black, page range, copies, previews; recorded as one history batch
+- [x] Default media: Shipping 3 × 3 in (76.2 × 76.2) and 2 × 3 in (50.8 × 76.2); existing libraries get them once
+- [x] "Print with TPrinter" in every print window's PDF ▾ menu (alias in ~/Library/PDF Services, Settings ›
+  Printing toggle); received PDFs open Print PDF Labels; optional "Print right away"
+- [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 
 ### Phase 5 — Polish (later)

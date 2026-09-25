@@ -52,10 +52,16 @@ struct Media: Identifiable, Codable, Hashable {
         Media(name: "Product 40 × 30", category: "Product", widthMM: 40, heightMM: 30),
         Media(name: "Price tag 50 × 30", category: "Product", widthMM: 50, heightMM: 30, gapMM: 3),
         Media(name: "Shipping 4 × 6 in", category: "Shipping", widthMM: 100, heightMM: 150, gapMM: 3),
+        Media(name: "Shipping 3 × 3 in", category: "Shipping", widthMM: 76.2, heightMM: 76.2, gapMM: 3),
+        Media(name: "Shipping 2 × 3 in", category: "Shipping", widthMM: 50.8, heightMM: 76.2, gapMM: 3),
         Media(name: "Parcel 60 × 40", category: "Shipping", widthMM: 60, heightMM: 40),
         Media(name: "Food date 40 × 20", category: "Food", widthMM: 40, heightMM: 20),
         Media(name: "Ring tag 22 × 10", category: "Jewelry", widthMM: 22, heightMM: 10, gapMM: 3),
     ]
+
+    /// Starters added after the first release: existing libraries get each of these once (a user
+    /// who later deletes one doesn't get it back).
+    static let laterStarters = ["Shipping 3 × 3 in", "Shipping 2 × 3 in"]
 }
 
 /// How labels are laid out in one printed row / sheet. The design is made for one label; printing

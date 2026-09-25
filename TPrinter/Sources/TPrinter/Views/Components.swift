@@ -141,7 +141,9 @@ struct RollPreview: View {
 
     var body: some View {
         let width = CGFloat(document.widthDots), height = CGFloat(document.heightDots)
-        let factor = min((maxSize.width - 32) / width, (maxSize.height - 36) / height)
+        // The strip is the label plus a gap and a liner sliver above and below: fit all of it.
+        let gapDots = CGFloat(document.gapMM) * dotsPerMM
+        let factor = max(min((maxSize.width - 32) / width, (maxSize.height - 30) / (height + 2 * gapDots)), 0.01)
         let labelWidth = width * factor, labelHeight = height * factor
         let corner = max(Theme.labelCornerMM * dotsPerMM * factor, 2)
         let gap = max(document.gapMM * dotsPerMM * factor, 3)
@@ -161,6 +163,7 @@ struct RollPreview: View {
         .background(Theme.liner)
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .frame(width: maxSize.width, height: maxSize.height)
+        .clipped()
         .accessibilityLabel("\(document.widthMM.formatted()) by \(document.heightMM.formatted()) millimetre label")
     }
 }

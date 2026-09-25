@@ -16,6 +16,12 @@ enum Theme {
     static let ledBusy = Color(hex: 0xD99A0B)
     static let ledOff = Color(light: 0x9AA09A, dark: 0x6C726C)
 
+    /// Behind the home screens and sheets. Light: a soft cool grey so white cards stand out (the
+    /// system "under page" colour is a flat mid-grey in light mode). Dark: the system colour.
+    static let appBackground = Color(light: 0xF2F4F7, darkSystem: .underPageBackgroundColor)
+    /// The editor's desk around the label roll: a shade darker than the app so the liner strip reads.
+    static let canvasDesk = Color(light: 0xE1E4EA, darkSystem: .underPageBackgroundColor)
+
     /// Die-cut corner radius of the label, in mm.
     static let labelCornerMM: CGFloat = 1.2
 }
@@ -26,6 +32,15 @@ extension Color {
                   red: Double((hex >> 16) & 0xFF) / 255,
                   green: Double((hex >> 8) & 0xFF) / 255,
                   blue: Double(hex & 0xFF) / 255)
+    }
+
+    /// A fixed colour in light mode, a system colour in dark mode.
+    init(light: UInt32, darkSystem: NSColor) {
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua { return darkSystem }
+            return NSColor(srgbRed: CGFloat((light >> 16) & 0xFF) / 255, green: CGFloat((light >> 8) & 0xFF) / 255,
+                           blue: CGFloat(light & 0xFF) / 255, alpha: 1)
+        })
     }
 
     /// Adapts to the window's light / dark appearance.

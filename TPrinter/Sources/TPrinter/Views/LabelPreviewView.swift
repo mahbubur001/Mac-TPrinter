@@ -117,7 +117,7 @@ struct LabelPreviewView: View {
                     .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
             }
             .scrollIndicators(zoom > 1 ? .automatic : .never)
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(Theme.canvasDesk)
             .overlay {
                 if isDropTarget {
                     RoundedRectangle(cornerRadius: 8)

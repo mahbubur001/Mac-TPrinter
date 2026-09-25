@@ -63,6 +63,19 @@
 				<string>net.restobox.tprinter.label</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- PDFs from print windows (PDF ▾ › Print with TPrinter) and "Open With": printed as labels. -->
+			<key>CFBundleTypeName</key>
+			<string>PDF Label</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>TPrinter uses Bluetooth to connect to your Rongta thermal label printer.</string>

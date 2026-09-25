@@ -35,6 +35,22 @@ final class PrintCenter: ObservableObject {
         }
     }
 
+    /// Prints `count` labels made on demand (PDF pages …), one job each, recorded as one batch.
+    /// `makeDocument(i)` builds label i just before it's sent.
+    func printLabels(count: Int, name: String, sample: LabelDocument, makeDocument: @escaping (Int) throws -> LabelDocument,
+                     completion: ((Int, String?) -> Void)? = nil) {
+        let printerName = printerName
+        printer.sendQueue(count: count) { index in
+            try LabelPrintService.job(for: makeDocument(index))
+        } completion: { [weak self] error in
+            guard let self else { return }
+            let printed = printer.lastQueueDone
+            record(name: name, document: sample, labels: error == nil ? count : printed, printer: printerName,
+                   error: error, batch: true)
+            completion?(printed, error)
+        }
+    }
+
     /// Records a finished batch (the batch model runs the queue itself so it can fill each row).
     func recordBatch(name: String, template: LabelDocument, labels: Int, printed: Int, error: String?) {
         record(name: name, document: template, labels: error == nil ? labels : printed, printer: printerName,

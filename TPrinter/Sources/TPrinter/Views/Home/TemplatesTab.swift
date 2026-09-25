@@ -560,7 +560,8 @@ private struct TemplateTile<CategoryMenu: View>: View {
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(style.color, in: RoundedRectangle(cornerRadius: 5))
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            // .button + .plain draws the label as designed (borderlessButton recolours it in light mode).
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .help("Change category")
             .padding(7)
         }

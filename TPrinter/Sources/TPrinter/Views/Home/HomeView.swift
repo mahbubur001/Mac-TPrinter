@@ -36,7 +36,7 @@ struct HomeView: View {
             }
             .animation(.easeOut(duration: 0.2), value: usesSidebar)
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Theme.appBackground)
     }
 
     private var header: some View {

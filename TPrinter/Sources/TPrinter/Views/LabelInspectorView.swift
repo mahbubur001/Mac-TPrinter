@@ -313,7 +313,7 @@ struct MMField: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(label).font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+            Text(label).font(.caption.weight(.bold)).foregroundStyle(.secondary)
             TextField(label, value: $value, format: .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.plain)
                 .multilineTextAlignment(.trailing)

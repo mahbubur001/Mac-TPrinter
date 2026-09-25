@@ -123,8 +123,8 @@ struct DashboardTab: View {
                 session.requestsNewMedia = true
                 session.route = .home(.settings)
             }
-            QuickActionTile(title: "Print an image", detail: "PNG, JPEG or PDF as a label", systemImage: "photo", tint: .pink) {
-                imageLabel()
+            QuickActionTile(title: "Print PDF labels", detail: "Courier labels: one page per label", systemImage: "doc.richtext", tint: .pink) {
+                session.showsPDFLabels = true
             }
             QuickActionTile(title: "Open template", detail: "Browse .tprlabel files", systemImage: "folder", tint: .indigo) {
                 session.openWithPanel()
@@ -158,20 +158,6 @@ struct DashboardTab: View {
     }
 
     /// A new label (same media as the current one) holding just the chosen image, fitted.
-    private func imageLabel() {
-        guard let url = ImageImport.chooseFile() else { return }
-        var document = session.document
-        document.elements = []
-        document.copies = 1
-        guard let element = try? ImageImport.element(from: url, label: CGSize(width: document.widthMM, height: document.heightMM)) else {
-            session.errorMessage = "“\(url.lastPathComponent)” isn't an image TPrinter can read."
-            return
-        }
-        document.elements = [element]
-        session.newDocument(size: nil)
-        session.perform("Add Image") { $0 = document }
-    }
-
     // MARK: Recent
 
     private var recentWork: some View {

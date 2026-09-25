@@ -60,6 +60,8 @@ struct TemplateCommands: Commands {
         CommandGroup(after: .printItem) {
             Button("Batch Print from CSV…") { session.showBatch() }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+            Button("Print PDF Labels…") { session.showsPDFLabels = true }
+                .keyboardShortcut("p", modifiers: [.command, .option])
         }
     }
 }
@@ -81,10 +83,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         // Old thumbnails (templates edited or deleted long ago) shouldn't pile up.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { ThumbnailCache.prune() }
+        PDFService.refreshIfEnabled()
     }
 
     /// Double-clicked `.tprlabel` files in Finder, or `open file.tprlabel`.
     func application(_ application: NSApplication, open urls: [URL]) {
+        // PDFs: from a print window's PDF ▾ › Print with TPrinter, or Open With → print as labels.
+        let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+        if !pdfs.isEmpty {
+            NSApp.activate(ignoringOtherApps: true)
+            session.receivePDFs(pdfs)
+        }
         guard let url = urls.first(where: { $0.pathExtension == LabelTemplate.fileExtension }) else { return }
         session.open(url)
     }

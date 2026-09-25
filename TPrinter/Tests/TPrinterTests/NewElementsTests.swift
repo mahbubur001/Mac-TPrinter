@@ -452,3 +452,103 @@ struct USBDiscoveryTests {
         #expect(Set(printers.map(\.id)).count == printers.count) // no duplicates, and no crash when none
     }
 }
+
+@MainActor
+struct PDFLabelsTests {
+    /// A two-page portrait PDF (A6-ish) with a black box on each page, like a courier label.
+    private func makePDF() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("TPrinterPDF-\(UUID()).pdf")
+        var box = CGRect(x: 0, y: 0, width: 298, height: 420)
+        let context = try #require(CGContext(url as CFURL, mediaBox: &box, nil))
+        for _ in 0..<2 {
+            context.beginPDFPage(nil)
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fill(CGRect(x: 30, y: 40, width: 238, height: 340))
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return url
+    }
+
+    private func media(width: Double, height: Double) -> Media {
+        Media(name: "Test \(width)x\(height)", category: "Shipping", widthMM: width, heightMM: height)
+    }
+
+    @Test func everyPageBecomesALabel() throws {
+        let pages = PDFLabels.pages(in: [try makePDF()])
+        #expect(pages.count == 2 && pages[1].index == 1 && pages[1].title.hasSuffix("page 2"))
+    }
+
+    @Test func portraitPageFitsAPortraitLabelWithoutTurning() throws {
+        let page = try #require(PDFLabels.pages(in: [try makePDF()]).first)
+        let document = try #require(PDFLabels.document(for: page, media: media(width: 100, height: 150), options: .init()))
+        let element = try #require(document.elements.first)
+        let size = ElementGeometry.sizeMM(of: element)
+        #expect(size.height > size.width)                      // still portrait
+        #expect(element.x >= 0.9 && element.y >= 0.9)           // inside the 1 mm margin
+        #expect(element.x + size.width <= 99.2 && element.y + size.height <= 149.2)
+        #expect(!element.dithers && !element.trimsImage)
+    }
+
+    @Test func portraitPageTurnsOnALandscapeLabel() throws {
+        let page = try #require(PDFLabels.pages(in: [try makePDF()]).first)
+        let turned = try #require(PDFLabels.document(for: page, media: media(width: 100, height: 60), options: .init()))
+        let size = ElementGeometry.sizeMM(of: try #require(turned.elements.first))
+        #expect(size.width > size.height)
+        var noTurn = PDFLabels.Options(); noTurn.rotates = false
+        let upright = try #require(PDFLabels.document(for: page, media: media(width: 100, height: 60), options: noTurn))
+        let uprightSize = ElementGeometry.sizeMM(of: try #require(upright.elements.first))
+        #expect(uprightSize.height > uprightSize.width)
+    }
+
+    @Test func labelPrintsAsOneBitmapJob() throws {
+        let page = try #require(PDFLabels.pages(in: [try makePDF()]).first)
+        let document = try #require(PDFLabels.document(for: page, media: media(width: 100, height: 150), options: .init()))
+        let job = String(decoding: try LabelPrintService.job(for: document), as: UTF8.self)
+        #expect(job.contains("SIZE 100.0 mm, 150.0 mm") && job.contains("BITMAP") && job.contains("PRINT 1,1"))
+    }
+}
+
+@MainActor
+struct MediaStarterTests {
+    @Test func existingLibrariesGetTheNewShippingSizesOnce() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TPrinterMedia-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let defaults = UserDefaults(suiteName: "TPrinterMedia-\(UUID())")!
+        // A library saved before the new sizes existed.
+        let old = Media.starters.filter { !Media.laterStarters.contains($0.name) }
+        try JSONEncoder().encode(old).write(to: folder.appendingPathComponent("media.json"))
+
+        let library = MediaLibrary(directory: folder, defaults: defaults)
+        let square = try #require(library.media(named: "Shipping 3 × 3 in"))
+        let small = try #require(library.media(named: "Shipping 2 × 3 in"))
+        #expect(square.widthMM == 76.2 && square.heightMM == 76.2 && small.widthMM == 50.8 && small.heightMM == 76.2)
+        // Next to the other shipping media.
+        let names = library.media.map(\.name)
+        #expect(names.firstIndex(of: "Shipping 3 × 3 in")! < names.firstIndex(of: "Food date 40 × 20")!)
+
+        // Deleted by the user: not added back.
+        library.delete(small.id)
+        #expect(MediaLibrary(directory: folder, defaults: defaults).media(named: "Shipping 2 × 3 in") == nil)
+    }
+}
+
+@MainActor
+struct PrintWithTPrinterTests {
+    @Test func pdfsFromAPrintWindowAreKeptAndOpenTheLabelsWindow() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("TPrinterIncoming-\(UUID()).pdf")
+        var box = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let context = try #require(CGContext(temp as CFURL, mediaBox: &box, nil))
+        context.beginPDFPage(nil); context.endPDFPage(); context.closePDF()
+
+        let session = LabelSession(defaults: UserDefaults(suiteName: "TPrinterIncoming-\(UUID())")!)
+        session.receivePDFs([temp])
+        let kept = try #require(session.incomingPDFs.first)
+        #expect(session.showsPDFLabels)
+        #expect(kept.path.hasPrefix(PDFService.inbox.path))        // a copy the print system can't delete
+        try FileManager.default.removeItem(at: temp)
+        #expect(FileManager.default.fileExists(atPath: kept.path))
+        #expect(PDFLabels.pages(in: [kept]).count == 1)
+        try? FileManager.default.removeItem(at: kept)
+    }
+}

@@ -33,6 +33,7 @@ struct ContentView: View {
                          textButtons: true)
                 .interactiveDismissDisabled()
         }
+        .sheet(isPresented: $session.showsPDFLabels) { PDFLabelsSheet() }
         .sheet(item: $session.savePrompt) { prompt in
             SaveTemplateDialog(prompt: prompt)
         }
