@@ -249,16 +249,19 @@ private struct QuickStepper: View {
     let tip: String
 
     var body: some View {
+        // "mm" = a length: shown in the unit chosen in Settings, stored in millimetres.
+        let measure: MeasureUnit? = unit == "mm" ? MeasureUnit.current : nil
         HStack(spacing: 0) {
-            Button { set(value - step) } label: { Image(systemName: "minus").frame(width: 24, height: 28).contentShape(Rectangle()) }
+            Button { nudge(-1, measure) } label: { Image(systemName: "minus").frame(width: 24, height: 28).contentShape(Rectangle()) }
                 .disabled(value <= range.lowerBound)
-            TextField("", value: Binding(get: { value }, set: { set($0) }), format: .number.precision(.fractionLength(0...2)))
+            TextField("", value: measure.map { $0.binding(Binding(get: { value }, set: { set($0) })) } ?? Binding(get: { value }, set: { set($0) }),
+                      format: measure?.fieldFormat ?? .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.plain)
                 .multilineTextAlignment(.center)
                 .monospacedDigit()
-                .frame(width: 42)
-            Text(unit).font(.caption2).foregroundStyle(.tertiary)
-            Button { set(value + step) } label: { Image(systemName: "plus").frame(width: 24, height: 28).contentShape(Rectangle()) }
+                .frame(width: 46)
+            Text(measure?.symbol ?? unit).font(.caption2).foregroundStyle(.tertiary)
+            Button { nudge(1, measure) } label: { Image(systemName: "plus").frame(width: 24, height: 28).contentShape(Rectangle()) }
                 .disabled(value >= range.upperBound)
         }
         .buttonStyle(.borderless)
@@ -268,7 +271,15 @@ private struct QuickStepper: View {
     }
 
     private func set(_ new: Double) {
-        value = min(max((new / step).rounded() * step, range.lowerBound), range.upperBound)
+        value = min(max(new, range.lowerBound), range.upperBound)
+    }
+
+    private func nudge(_ direction: Double, _ measure: MeasureUnit?) {
+        if let measure {
+            value = measure.stepped(value, stepMM: step, direction: direction, in: range)
+        } else {
+            value = min(max(((value / step).rounded() + direction) * step, range.lowerBound), range.upperBound)
+        }
     }
 }
 

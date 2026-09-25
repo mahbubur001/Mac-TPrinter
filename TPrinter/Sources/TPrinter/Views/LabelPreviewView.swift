@@ -382,7 +382,7 @@ struct LabelPreviewView: View {
                                                     rounds: !NSEvent.modifierFlags.contains(.option))
                 resize = ActiveResize(startSize: start, element: updated)
                 let size = ElementGeometry.sizeMM(of: updated)
-                onStatus(String(format: "%.1f × %.1f mm   Hold ⌥ to resize freely", size.width, size.height))
+                onStatus("\(MeasureUnit.current.size(size.width, size.height))   Hold ⌥ to resize freely")
             }
             .onEnded { _ in
                 if let resize, resize.element != document.elements.first(where: { $0.id == resize.element.id }) {
@@ -554,7 +554,7 @@ struct LabelPreviewView: View {
                     snaps: !NSEvent.modifierFlags.contains(.option)
                 ), size: size, id: element.id)
                 drag = ActiveDrag(id: element.id, start: CGPoint(x: original.x, y: original.y), position: position)
-                onStatus(String(format: "x %.1f mm, y %.1f mm   Hold ⌥ to move freely", position.x, position.y))
+                onStatus("x \(MeasureUnit.current.length(position.x)), y \(MeasureUnit.current.length(position.y))   Hold ⌥ to move freely")
             }
             .onEnded { _ in
                 if let drag, abs(drag.delta.width) > 0.001 || abs(drag.delta.height) > 0.001 {
@@ -578,31 +578,69 @@ private struct LinerRulers: View {
     let gap: CGFloat
     let margin: CGFloat
 
+    /// A tick at `mm` from the edge: 0 minor, 1 medium, 2 major (numbered with `label`).
+    struct Tick {
+        let mm: Double
+        let level: Int
+        let label: String?
+    }
+
+    /// Ticks in the unit chosen in Settings: mm (numbers every 5 mm), cm (mm ticks, numbers per cm),
+    /// inches (⅛ in ticks, ½ in medium, numbers per inch).
+    static func ticks(upTo length: Double, unit: MeasureUnit) -> [Tick] {
+        switch unit {
+        case .mm, .cm:
+            return (0...Int(length)).map { mm in
+                let major = unit == .mm ? mm % 5 == 0 : mm % 10 == 0
+                let medium = unit == .cm && mm % 5 == 0
+                return Tick(mm: Double(mm), level: major ? 2 : medium ? 1 : 0,
+                            label: major && mm > 0 ? "\(unit == .mm ? mm : mm / 10)" : nil)
+            }
+        case .inch:
+            let eighths = Int((length / 25.4 * 8).rounded(.down))
+            return (0...max(eighths, 0)).map { n in
+                Tick(mm: Double(n) * 25.4 / 8, level: n % 8 == 0 ? 2 : n % 4 == 0 ? 1 : 0,
+                     label: n % 8 == 0 && n > 0 ? "\(n / 8)" : nil)
+            }
+        }
+    }
+
     var body: some View {
+        let unit = MeasureUnit.current
         Canvas { context, _ in
             let ink = GraphicsContext.Shading.color(Color.black.opacity(0.35))
             let showNumbers = pointsPerMM > 6 && gap > 12
+            func length(_ tick: Tick, room: CGFloat) -> CGFloat {
+                switch tick.level {
+                case 2: min(room * 0.55, 10)
+                case 1: min(room * 0.4, 7)
+                default: min(room * 0.28, 5)
+                }
+            }
             // Top edge: ticks point up from the label into the gap.
-            for mm in 0...Int(widthMM) {
-                let x = origin.x + CGFloat(mm) * pointsPerMM
-                let major = mm % 5 == 0
-                let length = min(gap * (major ? 0.55 : 0.28), major ? 10 : 5)
-                context.fill(Path(CGRect(x: x - 0.5, y: origin.y - length, width: 1, height: length)), with: ink)
-                if major, showNumbers, mm > 0 {
-                    context.draw(Text("\(mm)").font(.system(size: 9, weight: .medium)).foregroundColor(.black.opacity(0.45)),
-                                 at: CGPoint(x: x + 2, y: origin.y - length - 1), anchor: .bottomLeading)
+            for tick in Self.ticks(upTo: widthMM, unit: unit) {
+                let x = origin.x + CGFloat(tick.mm) * pointsPerMM
+                let size = length(tick, room: gap)
+                context.fill(Path(CGRect(x: x - 0.5, y: origin.y - size, width: 1, height: size)), with: ink)
+                if let label = tick.label, showNumbers {
+                    context.draw(Text(label).font(.system(size: 9, weight: .medium)).foregroundColor(.black.opacity(0.45)),
+                                 at: CGPoint(x: x + 2, y: origin.y - size - 1), anchor: .bottomLeading)
                 }
             }
             // Left edge: ticks point left from the label into the margin.
-            for mm in 0...Int(heightMM) {
-                let y = origin.y + CGFloat(mm) * pointsPerMM
-                let major = mm % 5 == 0
-                let length = min(margin * (major ? 0.55 : 0.28), major ? 10 : 5)
-                context.fill(Path(CGRect(x: origin.x - length, y: y - 0.5, width: length, height: 1)), with: ink)
-                if major, showNumbers, mm > 0 {
-                    context.draw(Text("\(mm)").font(.system(size: 9, weight: .medium)).foregroundColor(.black.opacity(0.45)),
-                                 at: CGPoint(x: origin.x - length - 2, y: y), anchor: .trailing)
+            for tick in Self.ticks(upTo: heightMM, unit: unit) {
+                let y = origin.y + CGFloat(tick.mm) * pointsPerMM
+                let size = length(tick, room: margin)
+                context.fill(Path(CGRect(x: origin.x - size, y: y - 0.5, width: size, height: 1)), with: ink)
+                if let label = tick.label, showNumbers {
+                    context.draw(Text(label).font(.system(size: 9, weight: .medium)).foregroundColor(.black.opacity(0.45)),
+                                 at: CGPoint(x: origin.x - size - 2, y: y), anchor: .trailing)
                 }
+            }
+            // Unit name in the corner, so "3" can't be read as millimetres.
+            if showNumbers {
+                context.draw(Text(unit.symbol).font(.system(size: 8, weight: .bold)).foregroundColor(.black.opacity(0.4)),
+                             at: CGPoint(x: origin.x - 3, y: origin.y - 3), anchor: .bottomTrailing)
             }
         }
     }

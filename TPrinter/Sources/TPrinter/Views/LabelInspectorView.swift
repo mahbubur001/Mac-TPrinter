@@ -304,7 +304,8 @@ extension EnvironmentValues {
     }
 }
 
-/// "X  12.5 mm" compact number field.
+/// "X  12.5 mm" compact number field. `unit` "mm" = a length: shown and typed in the unit chosen in
+/// Settings (value and `range` stay in millimetres); anything else ("dot", "") is shown as is.
 struct MMField: View {
     let label: String
     @Binding var value: Double
@@ -312,14 +313,17 @@ struct MMField: View {
     var range: ClosedRange<Double> = -500...500
 
     var body: some View {
+        let isLength = unit == "mm"
+        let measure = MeasureUnit.current
         HStack(spacing: 4) {
             Text(label).font(.caption.weight(.bold)).foregroundStyle(.secondary)
-            TextField(label, value: $value, format: .number.precision(.fractionLength(0...2)))
+            TextField(label, value: isLength ? measure.binding($value) : $value,
+                      format: isLength ? measure.fieldFormat : .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.plain)
                 .multilineTextAlignment(.trailing)
                 .monospacedDigit()
                 .onSubmit { value = min(max(value, range.lowerBound), range.upperBound) }
-            Text(unit).font(.caption).foregroundStyle(.tertiary)
+            Text(isLength ? measure.symbol : unit).font(.caption).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 7)
         .frame(height: 26)
@@ -396,7 +400,7 @@ private struct ElementPanel: View {
 
     private func overflowCard(_ overflow: Double) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Runs off the label by \(overflow.formatted(.number.precision(.fractionLength(1)))) mm", systemImage: "exclamationmark.triangle.fill")
+            Label("Runs off the label by \(MeasureUnit.current.length(overflow))", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout.weight(.semibold)).foregroundStyle(.red)
             Text("The part outside the label won't print.").font(.caption).foregroundStyle(.secondary)
             HStack {
@@ -1046,7 +1050,7 @@ private struct LabelPanel: View {
             Text("Printing repeats the label in every cell.").font(.caption).foregroundStyle(.tertiary)
         }
         InspectorGroup(title: "Guides") {
-            Toggle("Safe margin (1 mm)", isOn: $showsMargin)
+            Toggle("Safe margin (\(MeasureUnit.current.length(1)))", isOn: $showsMargin)
             Toggle("Snap to edges and centres", isOn: $snaps)
             Text("Hold ⌥ while dragging to move freely.").font(.caption).foregroundStyle(.tertiary)
         }

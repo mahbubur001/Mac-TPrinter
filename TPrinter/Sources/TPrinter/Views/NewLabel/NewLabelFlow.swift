@@ -153,7 +153,7 @@ struct NewLabelFlow: View {
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(media.name).font(.headline).lineLimit(1)
-                    Text("\(media.sizeText), \(media.separation.title.lowercased())").font(.callout).foregroundStyle(.secondary)
+                    Text(media.detailText).font(.callout).foregroundStyle(.secondary)
                 }
                 Text(media.category).font(.caption.weight(.medium))
                     .padding(.horizontal, 7).padding(.vertical, 2)
@@ -246,7 +246,7 @@ struct NewLabelFlow: View {
             }
             .frame(width: sheet.width * scale, height: sheet.height * scale)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            Text("\(labelWidth.formatted()) × \(labelHeight.formatted()) mm each, row \(sheet.width.formatted()) × \(sheet.height.formatted()) mm")
+            Text("\(MeasureUnit.current.size(labelWidth, labelHeight)) each, row \(MeasureUnit.current.size(sheet.width, sheet.height))")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         .padding(22)

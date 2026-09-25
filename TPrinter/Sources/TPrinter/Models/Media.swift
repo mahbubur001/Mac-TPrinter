@@ -44,7 +44,13 @@ struct Media: Identifiable, Codable, Hashable {
     /// TSPL SPEED, inches/second.
     var defaultSpeed: Int = 4
 
-    var sizeText: String { "\(widthMM.formatted()) × \(heightMM.formatted()) mm" }
+    var sizeText: String { MeasureUnit.current.size(widthMM, heightMM) }
+    /// "30 × 15 mm, 2 mm gap" / "…, continuous" in the chosen unit.
+    var detailText: String {
+        let unit = MeasureUnit.current
+        let separation = separation == .continuous ? "continuous" : "\(unit.length(gapMM)) \(self.separation == .gap ? "gap" : "black mark")"
+        return "\(unit.size(widthMM, heightMM)), \(separation)"
+    }
 
     /// Stock the RP310 commonly uses; seeded on first launch.
     static let starters: [Media] = [
@@ -119,7 +125,7 @@ extension LabelDocument {
     }
 
     /// The media name to show ("30 × 15 mm" when the label wasn't made from a saved media).
-    var mediaTitle: String { mediaName.isEmpty ? "\(widthMM.formatted()) × \(heightMM.formatted()) mm" : mediaName }
+    var mediaTitle: String { mediaName.isEmpty ? MeasureUnit.current.size(widthMM, heightMM) : mediaName }
 }
 
 extension LabelArrangement {

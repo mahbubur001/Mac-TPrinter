@@ -18,7 +18,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: "Appearance, editor, notifications"
+        case .general: "Appearance, units, editor, notifications"
         case .printers: "Connect and manage printers"
         case .media: "Paper rolls and label sizes"
         case .printing: "Print method, alignment, print from websites"
@@ -52,7 +52,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Words that find this section in the settings search.
     var keywords: String {
         switch self {
-        case .general: "appearance theme dark light editor layers inspector notifications"
+        case .general: "appearance theme dark light units unit mm cm inch inches millimetres centimetres measurement editor layers inspector notifications"
         case .printers: "bluetooth connect search rongta rp310 disconnect advanced console log command"
         case .media: "paper roll label size gap black mark continuous category"
         case .printing: "print options method image native tspl alignment calibrate sensor darkness pdf print window website browser steadfast courier"
@@ -97,6 +97,18 @@ struct SettingsTab: View {
         HStack(alignment: .top, spacing: 0) {
             sidebar
             Divider()
+            if session.settingsSection == .media {
+                // Media scrolls its library and editor itself, so its save bar stays pinned.
+                VStack(alignment: .leading, spacing: 18) {
+                    SettingsHeader(section: .media)
+                    MediaSettings()
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 26)
+                .padding(.bottom, 20)
+                .frame(maxWidth: 1180, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     SettingsHeader(section: session.settingsSection)
@@ -114,8 +126,9 @@ struct SettingsTab: View {
                 .padding(.horizontal, 32)
                 .padding(.top, 26)
                 .padding(.bottom, 110)
-                .frame(maxWidth: session.settingsSection == .media ? 1000 : 760, alignment: .leading)
+                .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
             }
         }
     }
@@ -251,6 +264,7 @@ struct SettingsRow<Control: View>: View {
 
 private struct GeneralSettings: View {
     @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
+    @AppStorage(MeasureUnit.defaultsKey) private var unit = MeasureUnit.mm.rawValue
     @AppStorage("editorShowsLayers") private var showsLayers = true
     @AppStorage("editorShowsInspector") private var showsInspector = true
     @AppStorage(NoticeTopic.prints.settingKey) private var notifyPrints = true
@@ -265,6 +279,16 @@ private struct GeneralSettings: View {
                     ForEach(AppAppearance.allCases) { option in
                         AppearanceTile(option: option, isOn: appearance == option.rawValue) { appearance = option.rawValue }
                     }
+                }
+            }
+
+            SettingsGroup(title: "Units", footer: "Sizes, positions, rulers and fields everywhere use this unit. Labels are saved the same way whatever you pick, so templates open fine on any setting.") {
+                SettingsRow(title: "Measurements", subtitle: "Example: the 30 × 15 mm label is \((MeasureUnit(rawValue: unit) ?? .mm).size(30, 15))",
+                            systemImage: "ruler") {
+                    Picker("", selection: $unit) {
+                        ForEach(MeasureUnit.allCases) { Text("\($0.title) (\($0.symbol))").tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
                 }
             }
 
@@ -628,209 +652,3 @@ private struct AboutSettings: View {
 
 // MARK: - Media
 
-/// Paper rolls: searchable, filterable list beside the editor for the selected (or new) media.
-struct MediaSettings: View {
-    @EnvironmentObject private var library: MediaLibrary
-    @EnvironmentObject private var session: LabelSession
-    @State private var category: String?
-    @State private var query = ""
-    @State private var editing: Media?
-    @State private var isNew = false
-    @State private var confirmsDelete = false
-
-    private var shown: [Media] {
-        library.media(inCategory: category).filter {
-            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search media", text: $query).textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: 220)
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        FilterChip(title: "All \(library.media.count)", isOn: category == nil) { category = nil }
-                        ForEach(library.categories, id: \.self) { name in
-                            FilterChip(title: "\(name) \(library.media(inCategory: name).count)", isOn: category == name) { category = name }
-                        }
-                    }
-                }
-                .scrollIndicators(.never)
-                Button { startNew() } label: { Label("New Media", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent)
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                VStack(spacing: 0) {
-                    ForEach(shown) { media in
-                        mediaRow(media)
-                        if media.id != shown.last?.id { Divider().padding(.leading, 64) }
-                    }
-                    if shown.isEmpty {
-                        Text("No media match.").foregroundStyle(.secondary).padding(20)
-                    }
-                }
-                .frame(width: 320)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
-
-                if editing != nil {
-                    MediaEditor(media: Binding($editing)!, isNew: isNew, categories: library.categories) { saved in
-                        library.save(saved)
-                        editing = saved
-                        isNew = false
-                    } onDelete: {
-                        confirmsDelete = true
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .onAppear {
-            if session.requestsNewMedia { startNew(); session.requestsNewMedia = false }
-            else if editing == nil, let first = library.media.first { select(first) }
-        }
-        .onChange(of: session.requestsNewMedia) { _, requested in
-            if requested { startNew(); session.requestsNewMedia = false }
-        }
-        .sheet(isPresented: $confirmsDelete) {
-            ModernDialog(icon: "trash.fill", tone: .danger, title: "Delete “\(editing?.name ?? "")”?",
-                         message: "Templates made for it keep their size.",
-                         primary: .init("Delete Media", role: .destructive) {
-                             if let id = editing?.id { library.delete(id) }
-                             editing = library.media.first
-                             isNew = false
-                         })
-        }
-    }
-
-    private func mediaRow(_ media: Media) -> some View {
-        let isOn = editing?.id == media.id && !isNew
-        return Button { select(media) } label: {
-            HStack(spacing: 12) {
-                MediaDrawing(media: media, maxSize: CGSize(width: 40, height: 32)).frame(width: 40, height: 32)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(media.name).fontWeight(.medium).lineLimit(1)
-                    Text("\(media.sizeText), \(media.separation == .continuous ? "continuous" : "\(media.gapMM.formatted()) mm \(media.separation.title.lowercased())")")
-                        .font(.caption).foregroundStyle(isOn ? Color.white.opacity(0.85) : .secondary)
-                }
-                Spacer(minLength: 4)
-                Text(media.category).font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background((isOn ? Color.white : Color.primary).opacity(isOn ? 0.22 : 0.07), in: Capsule())
-            }
-            .foregroundStyle(isOn ? .white : .primary)
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(isOn ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 4).padding(.vertical, 2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func select(_ media: Media) { editing = media; isNew = false }
-
-    private func startNew() {
-        editing = Media(name: "", category: category ?? library.categories.first ?? "General", widthMM: 40, heightMM: 25)
-        isNew = true
-    }
-}
-
-/// Create / edit one media, with a live drawing of the roll.
-struct MediaEditor: View {
-    @Binding var media: Media
-    let isNew: Bool
-    let categories: [String]
-    var onSave: (Media) -> Void
-    var onDelete: (() -> Void)? = nil
-
-    private var canSave: Bool {
-        !media.name.trimmingCharacters(in: .whitespaces).isEmpty && media.widthMM > 0 && media.heightMM > 0
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 16) {
-                MediaDrawing(media: media, maxSize: CGSize(width: 150, height: 120))
-                    .frame(width: 160, height: 128)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isNew ? "New media" : (media.name.isEmpty ? "Untitled media" : media.name)).font(.title3.weight(.semibold))
-                    Text("\(media.sizeText), \(media.separation == .continuous ? "continuous" : "\(media.gapMM.formatted()) mm \(media.separation.title.lowercased())")")
-                        .foregroundStyle(.secondary).monospacedDigit()
-                    if media.labelsAcross > 1 {
-                        Text("\(media.labelsAcross) labels across").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-            }
-
-            SettingsGroup(title: "Name") {
-                SettingsRow(title: "Name") {
-                    TextField("", text: $media.name, prompt: Text("e.g. Product 40 × 25"))
-                        .textFieldStyle(.roundedBorder).frame(width: 220)
-                }
-                SettingsRow(title: "Category") {
-                    HStack(spacing: 4) {
-                        TextField("", text: $media.category, prompt: Text("e.g. Product"))
-                            .textFieldStyle(.roundedBorder).frame(width: 190)
-                        Menu {
-                            ForEach(categories, id: \.self) { name in Button(name) { media.category = name } }
-                        } label: { Image(systemName: "chevron.down") }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                        .disabled(categories.isEmpty)
-                    }
-                }
-            }
-
-            SettingsGroup(title: "Size & separation") {
-                SettingsRow(title: "Separation") {
-                    Picker("", selection: $media.separation) {
-                        ForEach(MediaSeparation.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().fixedSize()
-                }
-                ValueStepper(title: "Label width", value: $media.widthMM, range: 5...120, step: 1).padding(.horizontal, 14).padding(.vertical, 8)
-                ValueStepper(title: "Label height", value: $media.heightMM, range: 5...300, step: 1).padding(.horizontal, 14).padding(.vertical, 8)
-                if media.separation != .continuous {
-                    ValueStepper(title: media.separation == .gap ? "Gap" : "Mark height", value: $media.gapMM, range: 0...10, step: 0.5)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                }
-                ValueStepper(title: "Labels across", value: $media.labelsAcross.asDouble, range: 1...4, step: 1, unit: nil)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-            }
-
-            SettingsGroup(title: "Printing defaults", footer: "New labels made for this media start with these.") {
-                SettingsRow(title: "Material") {
-                    Picker("", selection: $media.material) {
-                        ForEach(MediaMaterial.allCases) { Text($0.title).tag($0) }
-                    }
-                    .labelsHidden().fixedSize()
-                }
-                ValueStepper(title: "Darkness", value: $media.defaultDarkness.asDouble, range: 0...15, step: 1, unit: "of 15")
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                ValueStepper(title: "Speed", value: $media.defaultSpeed.asDouble, range: 1...6, step: 1, unit: "in/s")
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-            }
-
-            HStack {
-                if !isNew, let onDelete {
-                    Button("Delete Media…", role: .destructive, action: onDelete)
-                }
-                Spacer()
-                Button(isNew ? "Add Media" : "Save Changes") { onSave(media) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!canSave)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-    }
-}

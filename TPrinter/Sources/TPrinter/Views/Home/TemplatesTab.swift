@@ -1,33 +1,41 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// All templates: the templates folder plus recently opened files. Search, filter by media
-/// category, sort, grid or list, and file actions (import, duplicate, export, rename, trash).
+/// All templates: the templates folder plus recently opened files. A "continue" card for the open
+/// label, search, category chips, sort / grouping, grid or list, hover Print / Edit, and actions on
+/// several templates at once (print, category, export, trash).
 struct TemplatesTab: View {
     @EnvironmentObject private var session: LabelSession
     @EnvironmentObject private var printCenter: PrintCenter
     @EnvironmentObject private var notices: NoticeCenter
     @EnvironmentObject private var library: MediaLibrary
+    @EnvironmentObject private var history: PrintHistory
     @State private var recategorizing: TemplateFile?
     @State private var newCategory = ""
     @AppStorage("templatesLayout") private var layout = Layout.grid.rawValue
     @AppStorage("templatesSort") private var sort = Sort.recent.rawValue
+    @AppStorage("templatesGrouping") private var groupsByCategory = true
     @State private var files: [TemplateFile] = []
     @State private var query = ""
     @State private var category: String?
     @State private var renaming: TemplateFile?
     @State private var renameText = ""
     @State private var trashing: TemplateFile?
+    @State private var trashesSelection = false
+    @State private var selection: Set<URL> = []
     @State private var isDropTarget = false
+    @FocusState private var searchFocused: Bool
 
     enum Layout: String { case grid, list }
 
     enum Sort: String, CaseIterable, Identifiable {
-        case recent = "Recently edited", name = "Name", size = "Label size"
+        case recent = "Recently edited", printed = "Most printed", name = "Name", size = "Label size"
         var id: String { rawValue }
     }
 
     // MARK: Data
+
+    private func name(_ file: TemplateFile) -> String { file.url.deletingPathExtension().lastPathComponent }
 
     private var categories: [(name: String, count: Int)] {
         var counts: [String: Int] = [:], order: [String] = []
@@ -39,16 +47,26 @@ struct TemplatesTab: View {
         return order.map { ($0, counts[$0] ?? 0) }
     }
 
+    /// Labels printed per template name, from the print history.
+    private var printCounts: [String: Int] {
+        history.records.reduce(into: [:]) { counts, record in
+            if record.result == .printed { counts[record.templateName, default: 0] += record.labels }
+        }
+    }
+
     private var shown: [TemplateFile] {
+        let counts = printCounts
         let filtered = files.filter { file in
-            let name = file.url.deletingPathExtension().lastPathComponent
-            let matchesQuery = query.isEmpty || name.localizedCaseInsensitiveContains(query)
+            let matchesQuery = query.isEmpty || name(file).localizedCaseInsensitiveContains(query)
                 || (file.document?.mediaTitle.localizedCaseInsensitiveContains(query) ?? false)
+                || (file.document.map { MeasureUnit.current.size($0.widthMM, $0.heightMM).localizedCaseInsensitiveContains(query) } ?? false)
+                || (file.document.map { LabelFields.names(in: $0).contains { $0.localizedCaseInsensitiveContains(query) } } ?? false)
             let matchesCategory = category == nil || file.document?.mediaCategory.caseInsensitiveCompare(category!) == .orderedSame
             return matchesQuery && matchesCategory
         }
         switch Sort(rawValue: sort) ?? .recent {
         case .recent: return filtered.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+        case .printed: return filtered.sorted { counts[name($0), default: 0] > counts[name($1), default: 0] }
         case .name: return filtered.sorted { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
         case .size: return filtered.sorted { area($0) < area($1) }
         }
@@ -59,29 +77,54 @@ struct TemplatesTab: View {
         return d.widthMM * d.heightMM
     }
 
+    /// Templates grouped by category (first-seen order), uncategorised last as "Other".
+    private var sections: [(name: String, files: [TemplateFile])] {
+        guard groupsByCategory else { return [("", shown)] }
+        var groups: [String: [TemplateFile]] = [:], order: [String] = []
+        for file in shown {
+            let key = file.document?.mediaCategory.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? "Other"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(file)
+        }
+        let sorted = order.filter { $0 != "Other" } + (order.contains("Other") ? ["Other"] : [])
+        return sorted.map { ($0, groups[$0] ?? []) }
+    }
+
+    private var selectedFiles: [TemplateFile] { files.filter { selection.contains($0.url) } }
+
     // MARK: Body
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                categoryChips
-                toolbar
                 if !outsideFolder.isEmpty { outsideBanner }
+                continueCard
+                toolbar
                 if shown.isEmpty {
                     emptyState
+                } else if layout == Layout.list.rawValue {
+                    listView
                 } else {
-                    ForEach(sections, id: \.name) { section in
-                        sectionView(section)
+                    ForEach(Array(sections.enumerated()), id: \.element.name) { index, section in
+                        gridSection(section, showsNewCard: index == 0)
                     }
                 }
             }
             .padding(.horizontal, 32)
-            .padding(.top, 18)
-            .padding(.bottom, 110)
-            .frame(maxWidth: 1120, alignment: .leading)
+            .padding(.top, 20)
+            .padding(.bottom, 130)
+            .frame(maxWidth: 1180, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        .overlay(alignment: .bottom) {
+            if !selection.isEmpty {
+                selectionBar
+                    .padding(.bottom, 86)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: selection.isEmpty)
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: 16)
@@ -99,6 +142,11 @@ struct TemplatesTab: View {
             return true
         } isTargeted: { isDropTarget = $0 }
         .task(id: session.recentURLs) { reload() }
+        .onChange(of: files) { _, new in selection = selection.intersection(Set(new.map(\.url))) }
+        .background {
+            Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).hidden()
+            Button("") { selection = [] }.keyboardShortcut(.cancelAction).hidden().disabled(selection.isEmpty)
+        }
         .sheet(isPresented: Binding(presenting: $renaming)) {
             let trimmed = renameText.trimmingCharacters(in: .whitespaces)
             let unchanged = trimmed == renaming?.url.deletingPathExtension().lastPathComponent
@@ -131,65 +179,122 @@ struct TemplatesTab: View {
                          primary: .init("Move to Trash", role: .destructive) { if let file = trashing { trash(file) } },
                          onCancel: { trashing = nil })
         }
+        .sheet(isPresented: $trashesSelection) {
+            ModernDialog(icon: "trash.fill", tone: .danger,
+                         title: "Move \(selection.count) template\(selection.count == 1 ? "" : "s") to the Trash?",
+                         message: "You can put them back from the Trash in Finder.",
+                         primary: .init("Move to Trash", role: .destructive) { trashSelection() })
+        }
     }
+
+    // MARK: Header
 
     private var header: some View {
-        ZStack {
-            Text("Templates").font(.system(size: 22, weight: .semibold))
-            HStack(spacing: 10) {
-                Spacer()
-                Button { chooseImport() } label: { Image(systemName: "square.and.arrow.down") }
-                    .help("Import .tprlabel files into your templates folder")
-                Menu {
-                    Button("Open Other File…") { session.openWithPanel() }
-                    Button("Show Templates Folder") {
-                        try? FileManager.default.createDirectory(at: session.templatesFolder, withIntermediateDirectories: true)
-                        NSWorkspace.shared.open(session.templatesFolder)
-                    }
-                    Button("Change Templates Folder…") { session.settingsSection = .files; session.route = .home(.settings) }
-                } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                Button { session.startNewLabel() } label: { Image(systemName: "plus").font(.system(size: 17, weight: .medium)) }
-                    .help("New label")
-            }
-            .buttonStyle(.borderless)
-            .font(.system(size: 15))
-        }
-        .frame(height: 30)
-    }
-
-    /// Centred category chips with each category's icon and colour.
-    private var categoryChips: some View {
-        let chips = HStack(spacing: 8) {
-            CategoryChip(title: "All", count: files.count, style: .all, isOn: category == nil) { category = nil }
-            ForEach(categories, id: \.name) { item in
-                CategoryChip(title: item.name, count: item.count, style: CategoryStyle(item.name), isOn: category == item.name) {
-                    category = category == item.name ? nil : item.name
+        HStack(alignment: .bottom, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Templates").font(.system(size: 26, weight: .bold))
+                    Text("\(files.count)").font(.system(size: 20, weight: .medium)).foregroundStyle(.tertiary)
                 }
+                Label(locationText, systemImage: AppStorageLocation.isInICloudDrive(session.templatesFolder) ? "icloud.fill" : "folder.fill")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .labelStyle(TintedIconLabelStyle())
             }
-        }
-        .padding(.vertical, 2)
-        // Centred when they fit, scrolling sideways when there are many categories.
-        return ViewThatFits(in: .horizontal) {
-            chips.frame(maxWidth: .infinity)
-            ScrollView(.horizontal) { chips }.scrollIndicators(.never)
-        }
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
+            Spacer(minLength: 12)
+            HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search by name or media", text: $query).textFieldStyle(.plain)
-                if !query.isEmpty {
+                TextField("Search templates, sizes, fields", text: $query)
+                    .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                if query.isEmpty {
+                    Text("⌘F").font(.caption2.weight(.medium)).foregroundStyle(.tertiary)
+                } else {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                         .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-            .frame(maxWidth: 260)
-            Spacer()
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .frame(width: 300)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(searchFocused ? Color.accentColor : Color.primary.opacity(0.1),
+                                                                      lineWidth: searchFocused ? 1.5 : 1))
+            Button { chooseImport() } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                .help("Copy .tprlabel files into your templates folder")
+            Menu {
+                Button("Open Other File…") { session.openWithPanel() }
+                Button("Show Templates Folder") {
+                    try? FileManager.default.createDirectory(at: session.templatesFolder, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(session.templatesFolder)
+                }
+                Button("Change Templates Folder…") { session.settingsSection = .files; session.route = .home(.settings) }
+            } label: { Image(systemName: "ellipsis") }
+            .menuIndicator(.hidden).fixedSize()
+            Button { session.startNewLabel() } label: { Label("New Label", systemImage: "plus") }
+                .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.large)
+    }
+
+    private var locationText: String {
+        let folder = session.templatesFolder
+        if AppStorageLocation.isInICloudDrive(folder) { return "iCloud Drive › \(folder.lastPathComponent)" }
+        return folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+
+    // MARK: Continue
+
+    @ViewBuilder
+    private var continueCard: some View {
+        let document = session.document
+        if !document.elements.isEmpty, query.isEmpty, category == nil {
+            let modified = session.fileURL.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path))?[.modificationDate] as? Date }
+            let printed = printCounts[session.displayName, default: 0]
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Theme.liner)
+                    LabelThumbnail(document: document, maxSize: CGSize(width: 156, height: 74))
+                        .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+                }
+                .frame(width: 180, height: 96)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CONTINUE WHERE YOU LEFT OFF").font(.system(size: 10, weight: .bold)).kerning(0.6).foregroundStyle(Color.accentColor)
+                    HStack(spacing: 6) {
+                        Text(session.displayName).font(.system(size: 17, weight: .semibold))
+                        if session.isDirty { Text("Edited").font(.caption.weight(.semibold)).foregroundStyle(Theme.ledBusy) }
+                    }
+                    Text([document.mediaTitle,
+                          modified.map { "Edited \(RecentTemplateRow.edited($0))" },
+                          printed > 0 ? "Printed \(printed)×" : nil]
+                        .compactMap { $0 }.joined(separator: "  ·  "))
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { session.continueEditing() } label: { Label("Open", systemImage: "pencil") }
+                    .controlSize(.large)
+                Button { printCenter.printLabel(document, name: session.displayName) } label: { Label("Print", systemImage: "printer.fill") }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(!printCenter.canPrint)
+            }
+            .padding(14)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.07)))
+            .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
+        }
+    }
+
+    // MARK: Toolbar
+
+    private var toolbar: some View {
+        HStack(spacing: 10) {
+            FlowLayout(spacing: 6) {
+                CategoryChip(title: "All", count: files.count, style: .all, isOn: category == nil) { category = nil }
+                ForEach(categories, id: \.name) { item in
+                    CategoryChip(title: item.name, count: item.count, style: CategoryStyle(item.name), isOn: category == item.name) {
+                        category = category == item.name ? nil : item.name
+                    }
+                }
+            }
+            Spacer(minLength: 8)
             Menu {
                 Picker("Sort by", selection: $sort) {
                     ForEach(Sort.allCases) { Text($0.rawValue).tag($0.rawValue) }
@@ -198,83 +303,168 @@ struct TemplatesTab: View {
             } label: {
                 Label(Sort(rawValue: sort)?.rawValue ?? "Sort", systemImage: "arrow.up.arrow.down")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .menuStyle(.borderlessButton).fixedSize()
+            Picker("Group", selection: $groupsByCategory) {
+                Text("By category").tag(true)
+                Text("All").tag(false)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            .disabled(layout == Layout.list.rawValue)
             Picker("Layout", selection: $layout) {
                 Image(systemName: "square.grid.2x2").tag(Layout.grid.rawValue).help("Grid")
                 Image(systemName: "list.bullet").tag(Layout.list.rawValue).help("List")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
         }
     }
 
-    // MARK: Sections
+    // MARK: Grid
 
-    /// Templates grouped by media category (in first-seen order), uncategorised last as "Other".
-    private var sections: [(name: String, files: [TemplateFile])] {
-        var groups: [String: [TemplateFile]] = [:], order: [String] = []
-        for file in shown {
-            let name = file.document?.mediaCategory.trimmingCharacters(in: .whitespaces) ?? ""
-            let key = name.isEmpty ? "Other" : name
-            if groups[key] == nil { order.append(key) }
-            groups[key, default: []].append(file)
-        }
-        let sorted = order.filter { $0 != "Other" } + (order.contains("Other") ? ["Other"] : [])
-        return sorted.map { ($0, groups[$0] ?? []) }
-    }
-
-    private func sectionView(_ section: (name: String, files: [TemplateFile])) -> some View {
-        let style = CategoryStyle(section.name)
+    private func gridSection(_ section: (name: String, files: [TemplateFile]), showsNewCard: Bool) -> some View {
+        let style = CategoryStyle(section.name.isEmpty ? "Other" : section.name)
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: style.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(style.color)
-                    .frame(width: 28, height: 28)
-                    .background(style.color.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
-                Text(section.name).font(.title3.weight(.bold))
-                Text("\(section.files.count)")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(style.color)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(style.color.opacity(0.14), in: Capsule())
+            if !section.name.isEmpty {
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 3).fill(style.color).frame(width: 10, height: 10)
+                    Text(section.name).font(.system(size: 15, weight: .semibold))
+                    Text("\(section.files.count)").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 7).padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.07), in: Capsule())
+                }
             }
-            if layout == Layout.list.rawValue {
-                listView(section.files)
-            } else {
-                gridView(section.files, style: style)
-            }
-        }
-        .padding(.top, 6)
-    }
-
-    // MARK: Layouts
-
-    private func gridView(_ files: [TemplateFile], style: CategoryStyle) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 210), spacing: 18, alignment: .top)], alignment: .leading, spacing: 18) {
-            ForEach(files) { file in
-                TemplateTile(file: file, style: style, canPrint: printCenter.canPrint) { session.open(file.url) } print: {
-                    printFile(file)
-                } trash: { trashing = file } categoryMenu: { categoryMenu(file) }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
+                ForEach(section.files) { file in
+                    TemplateGridCard(file: file, printed: printCounts[name(file), default: 0], canPrint: printCenter.canPrint,
+                                     isSelected: selection.contains(file.url), isSelecting: !selection.isEmpty) {
+                        tapped(file)
+                    } onEdit: {
+                        session.open(file.url)
+                    } onToggle: {
+                        toggle(file)
+                    } onPrint: { copies in
+                        printFile(file, copies: copies)
+                    } menu: {
+                        actionsMenu(file)
+                    }
                     .contextMenu { actionsMenu(file) }
+                }
+                if showsNewCard, query.isEmpty {
+                    NewTemplateCard { session.startNewLabel() }
+                }
             }
         }
     }
 
-    private func listView(_ files: [TemplateFile]) -> some View {
+    // MARK: List
+
+    private var listView: some View {
         VStack(spacing: 0) {
-            ForEach(files) { file in
-                TemplateRow(file: file, canPrint: printCenter.canPrint) { session.open(file.url) } print: {
-                    printFile(file)
-                } menu: { actionsMenu(file) }
-                    .contextMenu { actionsMenu(file) }
-                if file.id != files.last?.id { Divider().padding(.leading, 96) }
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 18)
+                Text("Template").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Media").frame(width: 150, alignment: .leading)
+                Text("Category").frame(width: 110, alignment: .leading)
+                Text("Elements").frame(width: 64, alignment: .trailing)
+                Text("Printed").frame(width: 60, alignment: .trailing)
+                Text("Edited").frame(width: 130, alignment: .leading)
+                Color.clear.frame(width: 96)
+            }
+            .font(.system(size: 10.5, weight: .bold)).textCase(.uppercase).kerning(0.4)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            Divider()
+            ForEach(shown) { file in
+                TemplateListRow(file: file, printed: printCounts[name(file), default: 0], canPrint: printCenter.canPrint,
+                                isSelected: selection.contains(file.url)) {
+                    tapped(file)
+                } onEdit: {
+                    session.open(file.url)
+                } onToggle: {
+                    toggle(file)
+                } onPrint: { copies in
+                    printFile(file, copies: copies)
+                } menu: {
+                    actionsMenu(file)
+                }
+                .contextMenu { actionsMenu(file) }
+                if file.id != shown.last?.id { Divider().padding(.leading, 14) }
             }
         }
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.07)))
+    }
+
+    // MARK: Selection
+
+    private func toggle(_ file: TemplateFile) {
+        if selection.contains(file.url) { selection.remove(file.url) } else { selection.insert(file.url) }
+    }
+
+    /// Selecting: a click adds / removes; otherwise it opens the template.
+    private func tapped(_ file: TemplateFile) {
+        if !selection.isEmpty || NSEvent.modifierFlags.contains(.command) { toggle(file) } else { session.open(file.url) }
+    }
+
+    private var selectionBar: some View {
+        HStack(spacing: 8) {
+            Text("\(selection.count) selected").font(.system(size: 13, weight: .semibold)).padding(.leading, 6)
+            Divider().frame(height: 18)
+            Button { printSelection() } label: { Label("Print", systemImage: "printer.fill") }
+                .disabled(!printCenter.canPrint)
+            Menu {
+                ForEach(knownCategories, id: \.self) { name in
+                    Button(name) { selectedFiles.forEach { setCategory(name, of: $0) } }
+                }
+                Divider()
+                Button("No Category (Other)") { selectedFiles.forEach { setCategory("", of: $0) } }
+            } label: { Label("Category", systemImage: "tag") }
+            .menuIndicator(.hidden).fixedSize()
+            Button { exportSelection() } label: { Label("Export", systemImage: "square.and.arrow.up") }
+            Button(role: .destructive) { trashesSelection = true } label: { Label("Trash", systemImage: "trash") }
+            Divider().frame(height: 18)
+            Button { selection = Set(shown.map(\.url)) } label: { Text("Select All") }
+            Button { selection = [] } label: { Image(systemName: "xmark") }
+                .help("Clear selection (Esc)")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.1)))
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 5)
+    }
+
+    private func printSelection() {
+        let documents = selectedFiles.compactMap(\.document)
+        guard let first = documents.first else { return }
+        printCenter.printLabels(count: documents.count, name: "\(documents.count) templates", sample: first) { documents[$0] }
+    }
+
+    private func exportSelection() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Export Here"
+        panel.message = "Choose a folder for \(selection.count) template\(selection.count == 1 ? "" : "s")"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        run {
+            for file in selectedFiles {
+                try FileManager.default.copyItem(at: file.url, to: TemplateFiles.uniqueURL(named: name(file), in: folder))
+            }
+            notices.post(.success, "Exported \(selection.count) template\(selection.count == 1 ? "" : "s")", folder.lastPathComponent)
+        }
+    }
+
+    private func trashSelection() {
+        let urls = selectedFiles.map(\.url)
+        selection = []
+        run {
+            for url in urls {
+                try TemplateFiles.moveToTrash(url)
+                session.removeRecent(url)
+            }
+            reload()
+        }
     }
 
     private var emptyState: some View {
@@ -308,6 +498,9 @@ struct TemplatesTab: View {
     private func actionsMenu(_ file: TemplateFile) -> some View {
         Button("Open") { session.open(file.url) }
         Button("Print") { printFile(file) }.disabled(!printCenter.canPrint || file.document == nil)
+        if session.recentURLs.contains(file.url) || session.isInTemplatesFolder(file.url) {
+            Button("Batch Print from CSV…") { session.open(file.url); session.showBatch() }
+        }
         Divider()
         Button("Duplicate") {
             run {
@@ -409,8 +602,9 @@ struct TemplatesTab: View {
         }
     }
 
-    private func printFile(_ file: TemplateFile) {
-        guard let document = file.document else { return }
+    private func printFile(_ file: TemplateFile, copies: Int = 1) {
+        guard var document = file.document else { return }
+        document.copies = copies
         printCenter.printLabel(document, name: file.url.deletingPathExtension().lastPathComponent)
     }
 
@@ -474,191 +668,287 @@ struct TemplatesTab: View {
     }
 }
 
-// MARK: - Tiles
 
-/// Grid card: the label on a grey tray with its category badge, delete button, name, size and element
-/// count, and an Edit button in the category's colour. Right-click for every file action.
-private struct TemplateTile<CategoryMenu: View>: View {
+// MARK: - Cards
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Label with its icon in the accent colour and the text secondary.
+private struct TintedIconLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.foregroundStyle(Color.accentColor)
+            configuration.title
+        }
+    }
+}
+
+/// Copies stepper + Print, shown from a card's Print button.
+private struct QuickPrintPanel: View {
     let file: TemplateFile
-    let style: CategoryStyle
+    var onPrint: (Int) -> Void
+    @EnvironmentObject private var bluetooth: PrinterBluetoothManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var copies = 1
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Print “\(file.url.deletingPathExtension().lastPathComponent)”").font(.headline).lineLimit(1)
+            HStack {
+                Text("Copies")
+                Spacer()
+                Stepper(value: $copies, in: 1...99) { Text("\(copies)").monospacedDigit().fontWeight(.semibold) }
+            }
+            HStack(spacing: 6) {
+                StatusLED(state: bluetooth.connection.isReady ? .ready : .off)
+                Text(bluetooth.connection.isReady ? bluetooth.displayName : "No printer connected")
+                Spacer()
+                if let document = file.document { Text(MeasureUnit.current.size(document.widthMM, document.heightMM)) }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            Button {
+                onPrint(copies)
+                dismiss()
+            } label: {
+                Label("Print \(copies) Label\(copies == 1 ? "" : "s")", systemImage: "printer.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!bluetooth.connection.isReady || file.document == nil)
+        }
+        .padding(14)
+        .frame(width: 250)
+    }
+}
+
+/// Grid card: the label on its roll (hover: Print / Edit), a selection tick, name + ⋯ menu, tags
+/// (category, size, elements) and how often it was printed.
+private struct TemplateGridCard<MenuContent: View>: View {
+    let file: TemplateFile
+    let printed: Int
     let canPrint: Bool
-    var open: () -> Void
-    var print: () -> Void
-    var trash: () -> Void
-    @ViewBuilder var categoryMenu: () -> CategoryMenu
+    let isSelected: Bool
+    let isSelecting: Bool
+    var onOpen: () -> Void
+    var onEdit: () -> Void
+    var onToggle: () -> Void
+    var onPrint: (Int) -> Void
+    @ViewBuilder var menu: () -> MenuContent
     @State private var hovering = false
+    @State private var showsPrint = false
 
     private var name: String { file.url.deletingPathExtension().lastPathComponent }
+    private var style: CategoryStyle { CategoryStyle(file.document?.mediaCategory.isEmpty == false ? file.document!.mediaCategory : "Other") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             preview
-            VStack(alignment: .leading, spacing: 3) {
-                Text(name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .padding(.horizontal, 12).padding(.top, 10)
-            HStack(spacing: 6) {
-                Button(action: open) {
-                    Text("Edit").font(.callout.weight(.medium)).frame(maxWidth: .infinity, minHeight: 26)
-                        .foregroundStyle(style.color)
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(style.color.opacity(0.8)))
-                        .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Text(name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Menu { menu() } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary).frame(width: 24, height: 20).contentShape(Rectangle())
+                    }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .help("More")
                 }
-                Button(action: print) {
-                    Image(systemName: "printer").font(.system(size: 12, weight: .medium)).frame(width: 30, height: 26)
-                        .foregroundStyle(canPrint ? style.color : Color.secondary)
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder((canPrint ? style.color : Color.secondary).opacity(0.5)))
-                        .contentShape(Rectangle())
+                HStack(spacing: 5) {
+                    TagChip(text: style.title, color: style.color)
+                    if let document = file.document {
+                        TagChip(text: MeasureUnit.current.size(document.widthMM, document.heightMM))
+                        TagChip(text: "\(document.elements.count) element\(document.elements.count == 1 ? "" : "s")")
+                    }
                 }
-                .disabled(!canPrint || file.document == nil)
-                .help(canPrint ? "Print" : "Connect a printer to print")
+                HStack {
+                    Text(printed > 0 ? "Printed \(printed)×" : "Not printed yet")
+                    Spacer()
+                    if let modified = file.modified { Text(RecentTemplateRow.edited(modified)) }
+                }
+                .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
             }
-            .buttonStyle(.plain)
-            .padding(12)
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 12)
         }
         .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(hovering ? style.color.opacity(0.6) : Color.primary.opacity(0.07),
-                                                                  lineWidth: hovering ? 1.5 : 1))
-        .shadow(color: .black.opacity(hovering ? 0.12 : 0.05), radius: hovering ? 10 : 3, y: hovering ? 4 : 1)
-        .contentShape(RoundedRectangle(cornerRadius: 12))
-        .onTapGesture(perform: open)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                                                  lineWidth: isSelected ? 2 : 1))
+        .shadow(color: .black.opacity(hovering ? 0.13 : 0.05), radius: hovering ? 12 : 3, y: hovering ? 5 : 1)
+        .offset(y: hovering ? -2 : 0)
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture(perform: onOpen)
         .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         .help(file.url.path)
     }
 
-    private var detail: String {
-        guard let document = file.document else { return "Can't read this file" }
-        let count = document.elements.count
-        return "\(document.widthMM.formatted())×\(document.heightMM.formatted())mm  •  \(count) element\(count == 1 ? "" : "s")"
-    }
-
     private var preview: some View {
-        let box = CGSize(width: 180, height: 132)
-        return ZStack {
-            Color.primary.opacity(0.06)
+        ZStack {
+            Theme.liner
+            // The neighbouring labels on the roll, just peeking in.
+            VStack {
+                RoundedRectangle(cornerRadius: 6).fill(Theme.paper.opacity(0.55)).frame(height: 14).offset(y: -7)
+                Spacer()
+                RoundedRectangle(cornerRadius: 6).fill(Theme.paper.opacity(0.55)).frame(height: 14).offset(y: 7)
+            }
+            .padding(.horizontal, 18)
             if let document = file.document {
-                LabelThumbnail(document: document, maxSize: CGSize(width: box.width - 28, height: box.height - 36))
-                    .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
-                    .padding(.top, 8)
+                LabelThumbnail(document: document, maxSize: CGSize(width: 190, height: 104), cornerRadius: 5)
+                    .shadow(color: .black.opacity(0.18), radius: 2.5, y: 1)
             } else {
-                Image(systemName: "questionmark.square.dashed").font(.title).foregroundStyle(.secondary)
+                Label("Can't read this file", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
+            }
+            if hovering, !isSelecting {
+                Color.black.opacity(0.32)
+                HStack(spacing: 8) {
+                    Button { showsPrint = true } label: { Label("Print", systemImage: "printer.fill") }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canPrint || file.document == nil)
+                        .help(canPrint ? "Print with copies" : "Connect a printer to print")
+                        .popover(isPresented: $showsPrint, arrowEdge: .bottom) { QuickPrintPanel(file: file, onPrint: onPrint) }
+                    Button(action: onEdit) { Label("Edit", systemImage: "pencil") }
+                        .buttonStyle(.bordered)
+                        .tint(.white)
+                }
+                .controlSize(.regular)
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                .transition(.opacity)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: box.height)
+        .frame(height: 148)
+        .clipped()
         .overlay(alignment: .topLeading) {
-            // Click the badge to move the template to another category.
-            Menu { categoryMenu() } label: {
-                HStack(spacing: 4) {
-                    Label(style.title, systemImage: style.icon)
-                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .heavy)).opacity(0.8)
+            if hovering || isSelecting || isSelected {
+                Button(action: onToggle) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(isSelected ? Color.accentColor : .white)
+                        .background(Circle().fill(isSelected ? .white : .black.opacity(0.25)).padding(2))
+                        .shadow(color: .black.opacity(0.25), radius: 2)
                 }
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(style.color, in: RoundedRectangle(cornerRadius: 5))
+                .buttonStyle(.plain)
+                .padding(9)
+                .help(isSelected ? "Deselect" : "Select (⌘-click)")
             }
-            // .button + .plain draws the label as designed (borderlessButton recolours it in light mode).
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-            .help("Change category")
-            .padding(7)
         }
         .overlay(alignment: .topTrailing) {
             if let document = file.document, !LabelFields.names(in: document).isEmpty {
-                Text("CSV")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 5))
-                    .padding(7)
+                Text("CSV").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 5))
+                    .padding(9)
                     .help("Has {{fields}} for batch printing")
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button(action: trash) {
-                Image(systemName: "trash.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(Color.red, in: Circle())
-                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-            }
-            .buttonStyle(.plain)
-            .help("Move to Trash")
-            .padding(7)
         }
     }
 }
 
-/// List row: thumbnail, name, media, edited, actions.
-private struct TemplateRow<MenuContent: View>: View {
-    let file: TemplateFile
-    let canPrint: Bool
-    var open: () -> Void
-    var print: () -> Void
-    @ViewBuilder var menu: () -> MenuContent
+/// Small rounded tag: "● Product", "30 × 15 mm".
+private struct TagChip: View {
+    let text: String
+    var color: Color? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let color { Circle().fill(color).frame(width: 6, height: 6) }
+            Text(text).lineLimit(1)
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+    }
+}
+
+/// Dashed "New label" card at the end of the grid; drop .tprlabel files anywhere to import.
+private struct NewTemplateCard: View {
+    var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            Group {
-                if let document = file.document {
-                    LabelThumbnail(document: document, maxSize: CGSize(width: 62, height: 40))
-                        .frame(width: 70, height: 48)
-                        .background(Theme.liner, in: RoundedRectangle(cornerRadius: 5))
-                } else {
-                    RoundedRectangle(cornerRadius: 5).fill(Theme.liner.opacity(0.4)).frame(width: 70, height: 48)
-                }
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 42, height: 42)
+                    .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 12))
+                Text("New label").font(.system(size: 13.5, weight: .semibold))
+                Text("or drop .tprlabel files to import").font(.caption).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(file.url.deletingPathExtension().lastPathComponent).font(.headline)
-                    if let document = file.document, !LabelFields.names(in: document).isEmpty { FieldsBadge() }
-                }
-                Text(file.url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
-            }
-            Spacer()
-            if let document = file.document { MediaBadge(text: document.mediaTitle) }
-            Text(file.modified?.formatted(.relative(presentation: .named)) ?? "").font(.callout).foregroundStyle(.secondary)
-                .frame(width: 110, alignment: .trailing)
-            HStack(spacing: 4) {
-                Button(action: print) { Image(systemName: "printer") }
-                    .disabled(!canPrint || file.document == nil)
-                    .help("Print")
-                Menu { menu() } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            }
-            .buttonStyle(.borderless)
-            .opacity(hovering ? 1 : 0.45)
+            .frame(maxWidth: .infinity, minHeight: 238)
+            .foregroundStyle(hovering ? Color.accentColor : .primary)
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hovering ? Color.accentColor : Color.primary.opacity(0.18),
+                                                                      style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(hovering ? Color.primary.opacity(0.04) : .clear)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: open)
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
     }
 }
 
-private struct MediaBadge: View {
-    let text: String
-    var body: some View {
-        Label(text, systemImage: "rectangle.split.1x2")
-            .font(.caption.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Color.primary.opacity(0.07), in: Capsule())
-    }
-}
+/// List row: tick, thumbnail + name, media, category, elements, printed, edited, Print / Edit / ⋯.
+private struct TemplateListRow<MenuContent: View>: View {
+    let file: TemplateFile
+    let printed: Int
+    let canPrint: Bool
+    let isSelected: Bool
+    var onOpen: () -> Void
+    var onEdit: () -> Void
+    var onToggle: () -> Void
+    var onPrint: (Int) -> Void
+    @ViewBuilder var menu: () -> MenuContent
+    @State private var hovering = false
+    @State private var showsPrint = false
 
-private struct FieldsBadge: View {
     var body: some View {
-        Text("CSV").font(.caption2.weight(.bold))
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Color.purple.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
-            .foregroundStyle(.purple)
-            .help("Has {{fields}} for batch printing")
+        let style = CategoryStyle(file.document?.mediaCategory.isEmpty == false ? file.document!.mediaCategory : "Other")
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(hovering ? 1 : 0.4))
+            }
+            .buttonStyle(.plain).frame(width: 18)
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5).fill(Theme.liner)
+                    if let document = file.document { LabelThumbnail(document: document, maxSize: CGSize(width: 56, height: 32)) }
+                }
+                .frame(width: 64, height: 40)
+                Text(file.url.deletingPathExtension().lastPathComponent).fontWeight(.semibold).lineLimit(1)
+                if let document = file.document, !LabelFields.names(in: document).isEmpty {
+                    Text("CSV").font(.system(size: 9.5, weight: .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.purple, in: RoundedRectangle(cornerRadius: 4))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(file.document?.mediaTitle ?? "—").foregroundStyle(.secondary).lineLimit(1).frame(width: 150, alignment: .leading)
+            TagChip(text: style.title, color: style.color).frame(width: 110, alignment: .leading)
+            Text(file.document.map { "\($0.elements.count)" } ?? "—").frame(width: 64, alignment: .trailing)
+            Text(printed > 0 ? "\(printed)×" : "—").frame(width: 60, alignment: .trailing)
+            Text(file.modified.map { RecentTemplateRow.edited($0) } ?? "—").foregroundStyle(.secondary).lineLimit(1).frame(width: 130, alignment: .leading)
+            HStack(spacing: 2) {
+                Button { showsPrint = true } label: { Image(systemName: "printer") }
+                    .disabled(!canPrint || file.document == nil)
+                    .help("Print")
+                    .popover(isPresented: $showsPrint, arrowEdge: .bottom) { QuickPrintPanel(file: file, onPrint: onPrint) }
+                Button(action: onEdit) { Image(systemName: "pencil") }.help("Edit")
+                Menu { menu() } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 96, alignment: .trailing)
+            .opacity(hovering || isSelected ? 1 : 0.5)
+        }
+        .font(.callout).monospacedDigit()
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(isSelected ? Color.accentColor.opacity(0.1) : (hovering ? Color.primary.opacity(0.04) : .clear))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .onHover { hovering = $0 }
     }
 }
 

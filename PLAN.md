@@ -168,6 +168,14 @@ Two print methods:
 - [x] Default media: Shipping 3 × 3 in (76.2 × 76.2) and 2 × 3 in (50.8 × 76.2); existing libraries get them once
 - [x] "Print with TPrinter" in every print window's PDF ▾ menu (alias in ~/Library/PDF Services, Settings ›
   Printing toggle); received PDFs open Print PDF Labels; optional "Print right away"
+- [x] Media page redesign: grouped library with to-scale thumbnails and "In use", to-scale drawing with
+  dimensions, size presets + swap, separation tiles, darkness strip, pinned save bar (unsaved / revert),
+  New Label / Alignment Test / Duplicate
+- [x] Units setting (mm / cm / in) in Settings › General: sizes, fields, steppers, rulers, status texts
+- [x] Templates page redesign: header (location, ⌘F search, Import, New Label), "Continue where you left
+  off", category chips + sort (incl. most printed) + grouping + grid / list, cards on the roll with
+  hover Print (copies) / Edit, print counts, trash moved into ⋯, multi-select bar (print, category,
+  export, trash), list table
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 

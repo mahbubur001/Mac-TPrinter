@@ -8,6 +8,8 @@ struct ContentView: View {
     @EnvironmentObject private var notices: NoticeCenter
     @Environment(\.undoManager) private var undoManager
     @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
+    /// Changing the unit redraws every screen, so all sizes, fields and rulers switch at once.
+    @AppStorage(MeasureUnit.defaultsKey) private var measureUnit = MeasureUnit.mm.rawValue
     @State private var selectedID: LabelElement.ID?
 
     var body: some View {
@@ -18,6 +20,7 @@ struct ContentView: View {
             case .editor: EditorView(selectedID: $selectedID)
             }
         }
+        .id(measureUnit)
         .ignoresSafeArea(.container, edges: .top) // content runs under the hidden title bar
         .animation(.easeOut(duration: 0.18), value: session.route)
         .modifier(TemplateErrorAlert(message: $session.errorMessage))

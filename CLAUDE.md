@@ -127,6 +127,8 @@ TPrinter/
     Models/ImageImport.swift                  image file → image element (≤960 px PNG, fitted, line-art detect)
     Models/LabelSession+Elements.swift        element commands: duplicate, delete, arrange, align, update
     Models/PDFLabels.swift                    PDF / image pages → one label each (rotate, trim, fit)
+    Models/MeasureUnit.swift                  display unit (mm / cm / in): formatting, field conversion, steps
+    Views/Home/MediaSettingsView.swift        Settings › Media: grouped library + editor (to-scale drawing, presets, save bar)
     Models/PDFService.swift                   "Print with TPrinter" PDF ▾ menu entry (~/Library/PDF Services alias) + inbox
     Views/PDFLabelsSheet.swift                "Print PDF Labels" window (session.showsPDFLabels)
     Models/ThumbnailCache.swift               content-hashed label thumbnails (Caches) + LabelThumbnail view
@@ -228,7 +230,9 @@ TPrinter/
 - Counters: every job renders `document.advancingCounters(by: jobIndex)`; after a print the session's
   counters advance by the jobs sent (`LabelSession.advanceCounters`). Date elements use the print day.
 - All label geometry in the model is in **millimetres**; convert to dots only
-  at render/print time (`dotsPerMM = 8`).
+  at render/print time (`dotsPerMM = 8`). The display unit (Settings › General › Units: mm / cm / in)
+  is `MeasureUnit.current`: show sizes with `unit.size/length/number`, and fields with `unit: "mm"`
+  (MMField, ValueStepper, QuickStepper) convert automatically. ContentView redraws on a unit change.
 - `LabelRenderView` is the single source of truth for what the label looks
   like: the preview and the image print path both use it.
 - UI and Bluetooth manager are `@MainActor`; CoreBluetooth runs on the main queue.

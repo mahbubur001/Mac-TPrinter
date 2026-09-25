@@ -552,3 +552,22 @@ struct PrintWithTPrinterTests {
         try? FileManager.default.removeItem(at: kept)
     }
 }
+
+struct MeasureUnitTests {
+    @Test func convertsAndFormatsEachUnit() {
+        #expect(MeasureUnit.mm.size(30, 15) == "30 × 15 mm")
+        #expect(MeasureUnit.cm.size(30, 15) == "3 × 1.5 cm")
+        #expect(MeasureUnit.inch.length(50.8) == "2 in")
+        #expect(MeasureUnit.inch.compactSize(76.2, 76.2) == "3×3 in")
+        #expect(abs(MeasureUnit.inch.mm(1) - 25.4) < 0.0001 && abs(MeasureUnit.cm.value(15) - 1.5) < 0.0001)
+    }
+
+    @Test func steppingStaysOnTheUnitsGrid() {
+        // 1 mm steps become 1/16 in steps in inches, and 0.1 cm in centimetres.
+        let upInch = MeasureUnit.inch.stepped(25.4, stepMM: 1, direction: 1, in: 0...300)
+        #expect(abs(upInch - 25.4 * (1 + 1.0 / 16)) < 0.001)
+        let downCM = MeasureUnit.cm.stepped(30, stepMM: 1, direction: -1, in: 0...300)
+        #expect(abs(downCM - 29) < 0.001)
+        #expect(MeasureUnit.mm.stepped(5, stepMM: 1, direction: -1, in: 5...120) == 5) // clamped
+    }
+}

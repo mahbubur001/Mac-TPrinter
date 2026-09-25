@@ -231,7 +231,7 @@ private struct EditorTopBar: View {
 
     private var title: String {
         let d = session.document
-        return "\(session.displayName) (\(d.widthMM.formatted())×\(d.heightMM.formatted())mm)\(session.isDirty ? "*" : "")"
+        return "\(session.displayName) (\(MeasureUnit.current.compactSize(d.widthMM, d.heightMM)))\(session.isDirty ? "*" : "")"
     }
 
     var body: some View {
@@ -558,7 +558,8 @@ private struct EditorArrangeBar: View {
             return count == 0 ? "Empty label: press + to add an element" : "\(count) element\(count == 1 ? "" : "s")"
         }
         let size = ElementGeometry.sizeMM(of: element)
-        return String(format: "x %.1f  y %.1f  ·  %.1f × %.1f mm", element.x, element.y, size.width, size.height)
+        let unit = MeasureUnit.current
+        return "x \(unit.number(element.x))  y \(unit.number(element.y))  ·  \(unit.size(size.width, size.height))"
     }
 }
 
@@ -584,7 +585,7 @@ private struct LayersPanel: View {
             Divider()
             VStack(alignment: .leading, spacing: 3) {
                 Text("Label").font(.caption.weight(.semibold))
-                Text("\(session.document.widthMM.formatted()) × \(session.document.heightMM.formatted()) mm, \(session.document.gapMM.formatted()) mm \(session.document.separation.title.lowercased())")
+                Text("\(MeasureUnit.current.size(session.document.widthMM, session.document.heightMM)), \(MeasureUnit.current.length(session.document.gapMM)) \(session.document.separation.title.lowercased())")
                     .font(.caption).foregroundStyle(.secondary)
                 Text(session.document.mediaTitle).font(.caption).foregroundStyle(.secondary)
             }

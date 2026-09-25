@@ -168,56 +168,6 @@ struct RollPreview: View {
     }
 }
 
-/// A saved template: preview, name, when it was edited and its media.
-struct TemplateCard: View {
-    let url: URL
-    let document: LabelDocument?
-    let modified: Date?
-    var width: CGFloat = 200
-    var action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 9) {
-                Group {
-                    if let document {
-                        RollPreview(document: document, maxSize: CGSize(width: width, height: width * 0.62))
-                    } else {
-                        RoundedRectangle(cornerRadius: 5).fill(Theme.liner.opacity(0.4))
-                            .frame(width: width, height: width * 0.62)
-                            .overlay(Text("Can't read this file").font(.caption).foregroundStyle(.secondary))
-                    }
-                }
-                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.accentColor, lineWidth: 2).opacity(hovering ? 1 : 0))
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(url.deletingPathExtension().lastPathComponent).font(.headline).lineLimit(1)
-                        if let document, !LabelFields.names(in: document).isEmpty {
-                            Text("CSV").font(.caption2.weight(.bold)).padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                                .help("Has {{fields}} for batch printing")
-                        }
-                    }
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            .frame(width: width, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
-        .help(url.path)
-    }
-
-    private var detail: String {
-        var parts: [String] = []
-        if let modified { parts.append("Edited \(modified.formatted(.relative(presentation: .named)))") }
-        if let document { parts.append(document.mediaTitle) }
-        return parts.joined(separator: ", ")
-    }
-}
-
 /// A saved template as a list row: label thumbnail, name, media, when it was edited, chevron.
 struct RecentTemplateRow: View {
     let file: TemplateFile
@@ -369,23 +319,36 @@ struct ValueStepper: View {
                 Text(title)
             }
             Spacer()
+            // "mm" = a length: shown in the unit chosen in Settings, stored in millimetres.
+            let measure: MeasureUnit? = unit == "mm" ? MeasureUnit.current : nil
             HStack(spacing: 0) {
-                Button { value = max(range.lowerBound, value - step) } label: { Image(systemName: "minus").frame(width: 26, height: 24) }
+                Button { change(-1, measure) } label: { Image(systemName: "minus").frame(width: 26, height: 24) }
                     .disabled(value <= range.lowerBound)
-                TextField(title, value: $value, format: .number.precision(.fractionLength(0...1)))
+                TextField(title, value: measure.map { $0.binding($value) } ?? $value,
+                          format: measure?.fieldFormat ?? .number.precision(.fractionLength(0...1)))
                     .labelsHidden()
                     .multilineTextAlignment(.center)
-                    .frame(width: 46)
+                    .frame(width: 52)
                     .textFieldStyle(.plain)
                     .monospacedDigit()
                     .onSubmit { value = min(max(value, range.lowerBound), range.upperBound) }
-                if let unit { Text(unit).font(.caption).foregroundStyle(.secondary).padding(.trailing, 2) }
-                Button { value = min(range.upperBound, value + step) } label: { Image(systemName: "plus").frame(width: 26, height: 24) }
+                if let text = measure?.symbol ?? unit { Text(text).font(.caption).foregroundStyle(.secondary).padding(.trailing, 2) }
+                Button { change(1, measure) } label: { Image(systemName: "plus").frame(width: 26, height: 24) }
                     .disabled(value >= range.upperBound)
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 2)
             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+        }
+    }
+}
+
+extension ValueStepper {
+    fileprivate func change(_ direction: Double, _ measure: MeasureUnit?) {
+        if let measure {
+            value = measure.stepped(value, stepMM: step, direction: direction, in: range)
+        } else {
+            value = min(max(value + direction * step, range.lowerBound), range.upperBound)
         }
     }
 }

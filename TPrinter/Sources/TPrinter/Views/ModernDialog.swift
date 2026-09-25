@@ -202,7 +202,7 @@ extension View {
     func calibrationDialog(isPresented: Binding<Bool>, document: LabelDocument, printerReady: Bool,
                            send: @escaping (Data) -> Void) -> some View {
         sheet(isPresented: isPresented) {
-            let size = "\(document.widthMM.formatted()) × \(document.heightMM.formatted()) mm"
+            let size = MeasureUnit.current.size(document.widthMM, document.heightMM)
             if !printerReady {
                 ModernDialog(icon: "printer.fill", tone: .warning, title: "Connect a printer first",
                              message: "Calibration runs on the printer. Connect it on the Dashboard, then try again.",

@@ -156,7 +156,7 @@ struct PDFLabelsSheet: View {
                     ForEach(library.media) { Text($0.name).tag($0.name) }
                 }
                 if let media {
-                    Text("\(media.widthMM.formatted()) × \(media.heightMM.formatted()) mm, \(media.gapMM.formatted()) mm \(media.separation.title.lowercased())")
+                    Text(media.detailText)
                         .font(.caption).foregroundStyle(.secondary)
                     if media.widthMM < 50 || media.heightMM < 50 {
                         Label("Small for a courier label. Add your parcel roll in Settings › Media.", systemImage: "exclamationmark.triangle.fill")
@@ -177,7 +177,7 @@ struct PDFLabelsSheet: View {
                 HStack {
                     Text("Margin")
                     Spacer()
-                    Stepper(value: $marginMM, in: 0...10, step: 0.5) { Text("\(marginMM.formatted()) mm").monospacedDigit() }
+                    Stepper(value: $marginMM, in: 0...10, step: 0.5) { Text(MeasureUnit.current.length(marginMM)).monospacedDigit() }
                 }
             }
             .toggleStyle(.switch).controlSize(.small)
