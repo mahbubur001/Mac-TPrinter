@@ -1,0 +1,25 @@
+# Build output (swift build, scripts/build-app.sh)
+.build/
+.build-app/
+build/
+.swiftpm/
+*.o
+*.dSYM/
+
+# Local code-signing identity: holds a private key. Never commit.
+.signing/
+*.keychain-db
+*.p12
+
+# Editors / IDEs
+.idea/
+.vscode/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+._*
+
+# Local tool settings
+.claude/settings.local.json

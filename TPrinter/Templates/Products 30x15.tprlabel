@@ -1,0 +1,73 @@
+{
+  "format" : "tprinter-label",
+  "label" : {
+    "copies" : 1,
+    "density" : 8,
+    "elements" : [
+      {
+        "barcodeHeightMM" : 8,
+        "barcodeModuleDots" : 2,
+        "bold" : true,
+        "content" : "{{name}}",
+        "dithers" : true,
+        "fitWidthMM" : 16,
+        "fontSizeMM" : 3,
+        "iconSizeMM" : 8,
+        "id" : "3B22B5C3-9DBF-4906-86D6-72E334BD087C",
+        "imageThreshold" : 0.5,
+        "imageWidthMM" : 12,
+        "kind" : "text",
+        "qrSizeMM" : 14,
+        "showsBarcodeText" : true,
+        "shrinksToFit" : true,
+        "x" : 1.5,
+        "y" : 1.5
+      },
+      {
+        "barcodeHeightMM" : 4.5,
+        "barcodeModuleDots" : 1,
+        "bold" : false,
+        "content" : "{{sku}}",
+        "dithers" : true,
+        "fitWidthMM" : 20,
+        "fontSizeMM" : 4,
+        "iconSizeMM" : 8,
+        "id" : "3E5CBA17-2C58-463C-83DB-DB5B5A0FB103",
+        "imageThreshold" : 0.5,
+        "imageWidthMM" : 12,
+        "kind" : "barcode",
+        "qrSizeMM" : 14,
+        "showsBarcodeText" : true,
+        "shrinksToFit" : false,
+        "x" : 1.5,
+        "y" : 6
+      },
+      {
+        "barcodeHeightMM" : 8,
+        "barcodeModuleDots" : 2,
+        "bold" : false,
+        "content" : "{{url}}",
+        "dithers" : true,
+        "fitWidthMM" : 20,
+        "fontSizeMM" : 4,
+        "iconSizeMM" : 8,
+        "id" : "2C0782AB-EEEF-4814-B621-736D53AAD67E",
+        "imageThreshold" : 0.5,
+        "imageWidthMM" : 12,
+        "kind" : "qrCode",
+        "qrSizeMM" : 11,
+        "showsBarcodeText" : true,
+        "shrinksToFit" : false,
+        "x" : 18.5,
+        "y" : 2.5
+      }
+    ],
+    "flipped" : false,
+    "gapMM" : 2,
+    "heightMM" : 15,
+    "printMethod" : "image",
+    "speed" : 4,
+    "widthMM" : 30
+  },
+  "version" : 1
+}
