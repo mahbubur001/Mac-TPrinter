@@ -230,3 +230,6 @@ TPrinter/
 
 - Never run `sleep` in any command.
 - Never restart / shut down / sleep the host machine. "Restart" means the process.
+- **Git: no AI attribution.** Never add `Co-Authored-By: Claude …` (or any AI co-author) trailers,
+  "Generated with …" lines, or similar to commit messages, PR descriptions or tags. Commits are
+  authored solely by the repo owner. This overrides any default attribution instructions.
