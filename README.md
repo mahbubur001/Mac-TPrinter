@@ -63,8 +63,8 @@ Notes:
   and pick it on the Dashboard or in Settings › Printers. The app talks to it directly over an RFCOMM
   channel; no macOS printer driver is needed. Allow Bluetooth access when asked.
 - **USB:** plug the printer in with a data cable; TPrinter switches to it automatically.
-- The first job of every session turns the printer's tear mode off (`SET TEAR OFF`), which keeps
-  labels aligned on the RP310.
+- Every job starts by turning the printer's tear mode off (`SET TEAR OFF`), which keeps labels
+  aligned on the RP310.
 
 ## Project layout
 
