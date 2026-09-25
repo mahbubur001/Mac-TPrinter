@@ -77,11 +77,13 @@ struct ModernDialog<Content: View>: View {
                     if let cancelTitle {
                         Button(cancelTitle, role: .cancel) { finish(onCancel) }
                             .buttonStyle(DialogButtonStyle(kind: .text))
+                            .focusable(false) // the focus ring made Cancel look like the default
                             .keyboardShortcut(.cancelAction)
                     }
                     if let secondary {
                         Button(secondary.title, role: secondary.role) { finish(secondary.perform) }
                             .buttonStyle(DialogButtonStyle(kind: secondary.role == .destructive ? .destructiveText : .text))
+                            .focusable(false)
                             .disabled(secondary.isDisabled)
                     }
                     Button(primary.title, role: primary.role) { finish(primary.perform) }
@@ -94,12 +96,14 @@ struct ModernDialog<Content: View>: View {
                 if let secondary {
                     Button(secondary.title, role: secondary.role) { finish(secondary.perform) }
                         .buttonStyle(DialogButtonStyle(kind: .plain))
+                        .focusable(false) // the focus ring made Cancel look like the default
                         .disabled(secondary.isDisabled)
                 }
                 Spacer()
                 if let cancelTitle {
                     Button(cancelTitle, role: .cancel) { finish(onCancel) }
                         .buttonStyle(DialogButtonStyle(kind: .plain))
+                        .focusable(false) // the focus ring made Cancel look like the default
                         .keyboardShortcut(.cancelAction)
                 }
                 Button(primary.title, role: primary.role) { finish(primary.perform) }

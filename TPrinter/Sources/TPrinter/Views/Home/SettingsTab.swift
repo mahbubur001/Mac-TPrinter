@@ -542,7 +542,8 @@ private struct FileSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SettingsGroup(title: "Templates folder", footer: "Save starts here, and the Templates tab lists every template in this folder.") {
-                SettingsRow(title: session.templatesFolder.lastPathComponent, subtitle: session.templatesFolder.deletingLastPathComponent().path,
+                SettingsRow(title: session.templatesFolder.lastPathComponent,
+                            subtitle: AppStorageLocation.isInICloudDrive(session.templatesFolder) ? "iCloud Drive" : session.templatesFolder.deletingLastPathComponent().path,
                             systemImage: "folder.fill") {
                     HStack {
                         Button("Change…") {
@@ -595,7 +596,7 @@ private struct FileSettings: View {
             let count = templateCount
             ModernDialog(icon: inICloud ? "folder.fill" : "icloud.and.arrow.up.fill", tone: .question,
                          title: inICloud ? "Move templates back to Documents?" : "Move templates to iCloud Drive?",
-                         message: "\(count) template\(count == 1 ? "" : "s") move from \(session.templatesFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) to "
+                         message: "\(count) template\(count == 1 ? "" : "s") move from \(inICloud ? "iCloud Drive › \(session.templatesFolder.lastPathComponent)" : session.templatesFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) to "
                             + (inICloud ? "Documents › TPrinter Templates." : "iCloud Drive › TPrinter Templates.")
                             + " Recent work and the open label keep working. Nothing is deleted.",
                          primary: .init(inICloud ? "Move Back" : "Move to iCloud") { relocate() })
