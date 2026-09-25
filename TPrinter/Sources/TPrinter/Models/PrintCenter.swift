@@ -30,14 +30,15 @@ final class PrintCenter: ObservableObject {
             try LabelPrintService.job(for: document.advancingCounters(by: index))
         } completion: { [weak self] error in
             guard let self else { return }
-            record(name: name, document: document, labels: copies, printer: printerName, error: error, batch: false)
+            record(name: name, document: document, labels: copies, printer: printerName, error: error, kind: .single)
             completion?(error)
         }
     }
 
     /// Prints `count` labels made on demand (PDF pages …), one job each, recorded as one batch.
     /// `makeDocument(i)` builds label i just before it's sent.
-    func printLabels(count: Int, name: String, sample: LabelDocument, makeDocument: @escaping (Int) throws -> LabelDocument,
+    func printLabels(count: Int, name: String, sample: LabelDocument, kind: PrintRecord.Kind = .batch,
+                     makeDocument: @escaping (Int) throws -> LabelDocument,
                      completion: ((Int, String?) -> Void)? = nil) {
         let printerName = printerName
         printer.sendQueue(count: count) { index in
@@ -46,7 +47,7 @@ final class PrintCenter: ObservableObject {
             guard let self else { return }
             let printed = printer.lastQueueDone
             record(name: name, document: sample, labels: error == nil ? count : printed, printer: printerName,
-                   error: error, batch: true)
+                   error: error, kind: kind)
             completion?(printed, error)
         }
     }
@@ -54,15 +55,16 @@ final class PrintCenter: ObservableObject {
     /// Records a finished batch (the batch model runs the queue itself so it can fill each row).
     func recordBatch(name: String, template: LabelDocument, labels: Int, printed: Int, error: String?) {
         record(name: name, document: template, labels: error == nil ? labels : printed, printer: printerName,
-               error: error, batch: true)
+               error: error, kind: .batch)
     }
 
-    private func record(name: String, document: LabelDocument, labels: Int, printer: String, error: String?, batch: Bool) {
+    private func record(name: String, document: LabelDocument, labels: Int, printer: String, error: String?, kind: PrintRecord.Kind) {
+        let batch = kind != .single
         let result: PrintRecord.Result = error == nil ? .printed : (error == "stopped" ? .stopped : .failed)
         history.add(PrintRecord(date: Date(), templateName: name, labels: labels * document.arrangement.cellCount,
                                 mediaName: document.mediaTitle, printer: printer, result: result,
                                 detail: error == "stopped" ? "" : (error ?? ""), wasBatch: batch,
-                                template: try? LabelTemplate.encode(document)))
+                                template: try? LabelTemplate.encode(document), kind: kind))
         let count = labels * document.arrangement.cellCount
         switch result {
         case .printed:

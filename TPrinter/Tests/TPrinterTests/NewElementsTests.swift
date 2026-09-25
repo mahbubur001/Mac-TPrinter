@@ -571,3 +571,14 @@ struct MeasureUnitTests {
         #expect(MeasureUnit.mm.stepped(5, stepMM: 1, direction: -1, in: 5...120) == 5) // clamped
     }
 }
+
+struct HistoryKindTests {
+    @Test func olderRecordsWithoutAKindFallBackToBatchOrSingle() throws {
+        let old = #"[{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","date":0,"templateName":"Fantasy","labels":1,"mediaName":"30 × 15 mm","printer":"RP310","result":"printed","detail":"","wasBatch":true}]"#
+        let records = try JSONDecoder().decode([PrintRecord].self, from: Data(old.utf8))
+        #expect(records[0].kind == nil && records[0].jobKind == .batch)
+        var pdf = records[0]; pdf.kind = .pdf
+        let roundTrip = try JSONDecoder().decode(PrintRecord.self, from: JSONEncoder().encode(pdf))
+        #expect(roundTrip.jobKind == .pdf)
+    }
+}

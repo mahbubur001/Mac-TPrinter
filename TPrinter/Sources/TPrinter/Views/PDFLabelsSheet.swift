@@ -303,7 +303,7 @@ struct PDFLabelsSheet: View {
         isPrinting = true
         status = nil
         let name = urls.count == 1 ? urls[0].deletingPathExtension().lastPathComponent : "\(urls.count) PDF files"
-        printCenter.printLabels(count: chosen.count * copies, name: name, sample: sample) { index in
+        printCenter.printLabels(count: chosen.count * copies, name: name, sample: sample, kind: .pdf) { index in
             let page = chosen[index / copies]
             guard let document = PDFLabels.document(for: page, media: media, options: options) else { throw UnreadablePage(title: page.title) }
             return document

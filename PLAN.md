@@ -176,6 +176,10 @@ Two print methods:
   off", category chips + sort (incl. most printed) + grouping + grid / list, cards on the roll with
   hover Print (copies) / Edit, print counts, trash moved into ⋯, multi-select bar (print, category,
   export, trash), list table
+- [x] History redesign: range (today / 7 / 30 days / all), Export CSV, overview (labels-per-day chart,
+  totals, success rate, most printed), status + type filters, day timeline with problem reasons and
+  hover Reprint / Open, detail panel (label as sent, details, reprint with copies, export, remove);
+  jobs now record their type (single / batch / PDF)
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 

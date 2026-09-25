@@ -142,6 +142,22 @@ struct PrintRecord: Identifiable, Codable, Hashable {
     var wasBatch: Bool = false
     /// The label as printed (template JSON), for Reprint.
     var template: Data?
+    /// Single label, CSV batch or PDF labels. Missing in older records (see `jobKind`).
+    var kind: Kind?
+
+    enum Kind: String, Codable, CaseIterable, Identifiable {
+        case single, batch, pdf
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .single: "Single"
+            case .batch: "Batch · CSV"
+            case .pdf: "PDF labels"
+            }
+        }
+    }
+
+    var jobKind: Kind { kind ?? (wasBatch ? .batch : .single) }
 }
 
 /// Everything printed, newest first. Keeps the last `limit` jobs.
