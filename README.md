@@ -85,3 +85,7 @@ TPrinter/
 
 `CLAUDE.md` has detailed notes on the printer's behaviour and the code's conventions; `PLAN.md`
 tracks what's done and what's left.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
