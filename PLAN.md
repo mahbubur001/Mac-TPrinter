@@ -185,6 +185,9 @@ Two print methods:
   cells in red (rows with missing values start unticked), pinned print bar (selected rows or range,
   copies, total, time estimate, progress + stop), sample CSV for the template
 - [ ] Try a batch on the device with the new row selection / column mapping
+- [x] Dashboard redesign: greeting + printer status, printer card (picture with LED, connection, last job,
+  loaded media, tools / find printer), week chart + success + most printed, four main actions with
+  shortcuts + tools row, continue card, recent templates (hover Print / Edit), recent activity
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 

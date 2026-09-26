@@ -141,7 +141,7 @@ TPrinter/
     Models/PrintCenter.swift                  every label print goes through here → history + notifications
     Views/ContentView.swift                   root: session.route → HomeView / NewLabelFlow / EditorView
     Views/Home/HomeView.swift                 header (icon, bell, gear) + tabs: left TabSidebar when ≥1000 pt wide, else floating TabBar (⌘1–5)
-    Views/Home/DashboardTab.swift             printer panel + search, quick actions, recent work
+    Views/Home/DashboardTab.swift             greeting, printer card, week stats, main actions, continue, recent templates / activity
     Views/Home/TemplatesTab.swift             templates folder + recents, search, media-category filter
     Views/Home/HistoryTab.swift               History: totals, search/filters, grouped by day, as-printed thumbnails
     Views/Home/SettingsTab.swift              General, Printers, Media (MediaSettings/MediaEditor), Printing, Files, About

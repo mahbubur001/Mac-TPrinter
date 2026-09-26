@@ -99,41 +99,6 @@ struct StatusPill: View {
 
 // MARK: - Tiles & cards
 
-/// A quick action: tinted icon square, title, one line of description.
-struct QuickActionTile: View {
-    let title: String
-    let detail: String
-    let systemImage: String
-    let tint: Color
-    var action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 18) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 14, weight: .semibold))
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
-            .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.07)))
-            .shadow(color: .black.opacity(hovering ? 0.14 : 0.05), radius: hovering ? 10 : 3, y: hovering ? 4 : 1)
-            .offset(y: hovering ? -2 : 0)
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
-    }
-}
-
 /// The label on a short length of its roll: liner strip, slivers of the neighbouring labels.
 struct RollPreview: View {
     let document: LabelDocument
