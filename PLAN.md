@@ -180,6 +180,11 @@ Two print methods:
   totals, success rate, most printed), status + type filters, day timeline with problem reasons and
   hover Reprint / Open, detail panel (label as sent, details, reprint with copies, export, remove);
   jobs now record their type (single / batch / PDF)
+- [x] Batch redesign: step tracker, template / data (delimiter, encoding) / field cards, pick a CSV
+  column per field, big preview + next-rows strip, rows table with tick boxes, issue filter and empty
+  cells in red (rows with missing values start unticked), pinned print bar (selected rows or range,
+  copies, total, time estimate, progress + stop), sample CSV for the template
+- [ ] Try a batch on the device with the new row selection / column mapping
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 

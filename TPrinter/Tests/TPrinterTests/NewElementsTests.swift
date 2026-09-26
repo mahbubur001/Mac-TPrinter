@@ -582,3 +582,33 @@ struct HistoryKindTests {
         #expect(roundTrip.jobKind == .pdf)
     }
 }
+
+@MainActor
+struct BatchModelTests {
+    private func csv(_ text: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("TPrinterBatch-\(UUID()).csv")
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    @Test func rowsMissingAValueStartUntickedAndRangeOverrides() throws {
+        let model = BatchPrintModel()
+        model.load(try csv("sku,name\n1,Tea\n2,\n3,Cocoa\n"), fields: ["name", "sku"])
+        #expect(model.excluded == [1])
+        #expect(model.printRows == [0, 2])
+        #expect(model.missingValues(inRow: 1, fields: ["name", "sku"]) == ["name"])
+        model.usesRange = true
+        model.firstRow = 2; model.lastRow = 3
+        #expect(model.printRows == [1, 2])
+    }
+
+    @Test func fieldsCanReadFromAColumnWithAnotherName() throws {
+        let model = BatchPrintModel()
+        model.load(try csv("Product Name;Code\nGreen Tea;100234\n"), fields: ["name"])
+        #expect(model.column(for: "name") == nil && model.table?.delimiter == ";")
+        model.setColumn("Product Name", for: "name")
+        var template = LabelDocument()
+        template.elements = [LabelElement(kind: .text, content: "{{name}}", x: 0, y: 0)]
+        #expect(model.filled(template, row: 1).elements[0].content == "Green Tea")
+    }
+}

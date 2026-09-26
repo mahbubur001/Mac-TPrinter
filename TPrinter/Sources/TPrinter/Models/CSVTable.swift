@@ -4,6 +4,17 @@ import Foundation
 struct CSVTable: Equatable {
     var headers: [String]
     var rows: [[String]]
+    /// What the file turned out to use (shown in Batch › Data).
+    var delimiter: Character = ","
+    var encodingName = "UTF-8"
+
+    var delimiterName: String {
+        switch delimiter {
+        case ";": "Semicolon separated"
+        case "\t": "Tab separated"
+        default: "Comma separated"
+        }
+    }
 
     enum ParseError: LocalizedError {
         case empty
@@ -25,8 +36,12 @@ struct CSVTable: Equatable {
     static func load(_ url: URL) throws -> CSVTable {
         let data = try Data(contentsOf: url)
         // Excel on Mac/Windows may save as UTF-8 (with BOM), UTF-16 or Windows-1252.
-        for encoding in [String.Encoding.utf8, .utf16, .windowsCP1252] {
-            if let text = String(data: data, encoding: encoding) { return try parse(text) }
+        for (encoding, name) in [(String.Encoding.utf8, "UTF-8"), (.utf16, "UTF-16"), (.windowsCP1252, "Windows Latin")] {
+            if let text = String(data: data, encoding: encoding) {
+                var table = try parse(text)
+                table.encodingName = name
+                return table
+            }
         }
         throw ParseError.unreadable
     }
@@ -87,7 +102,7 @@ struct CSVTable: Equatable {
         let rows = records.dropFirst().map { row in
             Array((row + Array(repeating: "", count: max(0, headers.count - row.count))).prefix(headers.count))
         }
-        return CSVTable(headers: headers, rows: rows)
+        return CSVTable(headers: headers, rows: rows, delimiter: delimiter)
     }
 
     private static func detectDelimiter(_ text: String) -> Character {

@@ -159,7 +159,7 @@ TPrinter/
     Views/LabelInspectorView.swift            properties panel: search + category tabs over collapsible InspectorGroups (InspectorSections registry)
     Printing/BarcodeEncoder.swift             EAN-13/8, UPC-A, Code 39, ITF-14, Codabar (Code 128 = CoreImage)
     Views/ImageCropSheet.swift                crop sheet (unit-rect crop on the original picture)
-    Views/BatchPrintView.swift                Batch tab UI + BatchPrintModel (owned by AppDelegate, survives tab switches)
+    Views/BatchPrintView.swift                Batch tab UI + BatchPrintModel (owned by AppDelegate): column mapping, ticked rows / range
     Views/…                                   SwiftUI UI
   Templates/                         sample .tprlabel templates
   Tests/TPrinterTests/

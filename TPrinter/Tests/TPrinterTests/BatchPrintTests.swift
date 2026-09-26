@@ -85,6 +85,7 @@ struct BatchRowStatusTests {
         let model = BatchPrintModel()
         model.load(url)
         #expect(model.rowCount == 4 && model.lastRow == 4)
+        model.usesRange = true // print a from–to range instead of the ticked rows
         model.firstRow = 2; model.lastRow = 3
         #expect(model.selectedRowCount == 2)
         #expect(model.status(ofRow: 1, queueDone: nil) == .skipped)
