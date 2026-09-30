@@ -612,3 +612,39 @@ struct BatchModelTests {
         #expect(model.filled(template, row: 1).elements[0].content == "Green Tea")
     }
 }
+
+struct SettingsSearchTests {
+    @Test func findsIndividualSettingsAcrossPages() {
+        #expect(SettingsSearch.matches("dark").map(\.title).contains("Appearance"))
+        #expect(SettingsSearch.matches("inch").first?.section == .general)
+        #expect(SettingsSearch.matches("calibrate").first?.section == .printing)
+        #expect(SettingsSearch.matches("icloud").contains { $0.section == .files })
+        #expect(SettingsSearch.matches("   ").isEmpty && SettingsSearch.matches("zzzz").isEmpty)
+        #expect(Set(SettingsSearch.entries.map(\.id)).count == SettingsSearch.entries.count)
+    }
+}
+
+@MainActor
+struct RenameLabelTests {
+    @Test func editorTitleRenamesTheFileOrNamesAnUnsavedLabel() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TPrinterRename-\(UUID())")
+        let session = LabelSession(defaults: UserDefaults(suiteName: "TPrinterRename-\(UUID())")!)
+        session.templatesFolder = folder
+        session.newDocument(size: CGSize(width: 30, height: 15))
+        #expect(session.renameLabel(to: "  Tea Label "))       // unsaved: becomes the save name
+        #expect(session.displayName == "Tea Label" && session.suggestedName == "Tea Label" && session.fileURL == nil)
+
+        let saved = try #require(session.saveInTemplatesFolder(named: session.suggestedName))
+        _ = try #require(session.saveInTemplatesFolder(named: "Taken"))   // a second file, then reopen the first
+        session.open(saved)
+        #expect(session.renameLabel(to: "Green Tea"))
+        #expect(session.fileURL?.lastPathComponent == "Green Tea.tprlabel")
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Green Tea.tprlabel").path))
+        #expect(!FileManager.default.fileExists(atPath: saved.path))
+        #expect(session.recentURLs.contains { $0.lastPathComponent == "Green Tea.tprlabel" })
+
+        #expect(!session.renameLabel(to: "Taken") && session.errorMessage != nil)   // name in use
+        #expect(session.displayName == "Green Tea")
+        #expect(session.renameLabel(to: "   ") && session.displayName == "Green Tea")   // blank: ignored
+    }
+}

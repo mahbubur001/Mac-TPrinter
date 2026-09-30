@@ -183,6 +183,8 @@ TPrinter/
   → `LabelSession.receivePDFs` copies them to Caches/TPrinter/Incoming PDFs → Print PDF Labels sheet.
   Info.plist declares PDF as a Viewer/Alternate document type for this.
 - Template previews in lists use `LabelThumbnail` (cached), not a live `LabelRenderView`.
+- Settings search: add an entry to `SettingsSearch.entries`; its `anchor` must be a `SettingsRow` title
+  (or `anchor:`) or a block marked `.settingsAnchor(...)` so the result can scroll to and highlight it.
 - New inspector section: add its title to `InspectorSections.table` (category, icon, search keywords)
   and to `InspectorSections.titles(for:)`.
 - Design: the canvas shows the label on its liner roll (neighbours ghosted, gap

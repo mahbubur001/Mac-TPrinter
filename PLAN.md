@@ -188,6 +188,10 @@ Two print methods:
 - [x] Dashboard redesign: greeting + printer status, printer card (picture with LED, connection, last job,
   loaded media, tools / find printer), week chart + success + most printed, four main actions with
   shortcuts + tools row, continue card, recent templates (hover Print / Edit), recent activity
+- [x] Settings redesign: grouped sidebar (App / Printing / Files / Help, printer badge), search that jumps to
+  and highlights individual settings, tinted row icons, print-method tiles + print-window hint, iCloud /
+  data sizes / clear thumbnail cache, About with GitHub, log file and Copy System Info
+- [x] Rename a label from the editor title (click → inline field; renames the file, or names an unsaved label)
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 

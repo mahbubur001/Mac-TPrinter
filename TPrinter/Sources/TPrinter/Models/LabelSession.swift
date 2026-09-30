@@ -108,7 +108,30 @@ final class LabelSession: ObservableObject {
     }
 
     var displayName: String {
-        fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        fileURL?.deletingPathExtension().lastPathComponent ?? draftName ?? "Untitled"
+    }
+
+    /// The name given to a label that isn't saved yet (editor title); the first save uses it.
+    @Published private(set) var draftName: String?
+
+    /// Renames the label from the editor title: renames its file, or names the unsaved label.
+    /// Returns false (and sets `errorMessage`) if the name can't be used.
+    @discardableResult
+    func renameLabel(to name: String) -> Bool {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, clean != displayName else { return true }
+        guard let url = fileURL else {
+            draftName = clean
+            return true
+        }
+        do {
+            let renamed = try TemplateFiles.rename(url, to: clean)
+            templateMoved(from: url, to: renamed)
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: - Editing
@@ -232,6 +255,7 @@ final class LabelSession: ObservableObject {
     /// The file name a new label starts with: its name, else its first text, else "Untitled".
     var suggestedName: String {
         if let fileURL { return fileURL.deletingPathExtension().lastPathComponent }
+        if let draftName { return draftName }
         let text = document.elements.first { $0.kind == .text }?.content
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces) ?? ""
@@ -386,6 +410,7 @@ final class LabelSession: ObservableObject {
         self.document = document
         isReplacingDocument = false
         self.fileURL = fileURL
+        draftName = nil
         baseline = document
         isDirty = false
         generation += 1

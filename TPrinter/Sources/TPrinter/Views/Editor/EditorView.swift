@@ -229,21 +229,12 @@ private struct EditorTopBar: View {
     @Binding var zoom: CGFloat
     var onPrint: () -> Void
 
-    private var title: String {
-        let d = session.document
-        return "\(session.displayName) (\(MeasureUnit.current.compactSize(d.widthMM, d.heightMM)))\(session.isDirty ? "*" : "")"
-    }
-
     var body: some View {
         ZStack {
             // The empty space drags the window (no title bar).
             WindowDragArea()
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(1)
+            EditableLabelTitle()
                 .frame(maxWidth: 420)
-                .help(session.isDirty ? "Unsaved changes" : "Saved")
-                .allowsHitTesting(false)
             HStack(spacing: 10) {
                 Button { session.leaveEditor() } label: {
                     Image(systemName: "arrow.left").font(.system(size: 15, weight: .medium)).frame(width: 30, height: 28)
@@ -621,5 +612,89 @@ extension View {
         background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.08)))
             .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
+    }
+}
+
+/// The editor's title: the label's name (click to rename), its size and an unsaved marker.
+struct EditableLabelTitle: View {
+    @EnvironmentObject private var session: LabelSession
+    @State private var isEditing = false
+    @State private var draft = ""
+    @State private var isHovering = false
+    @FocusState private var fieldFocused: Bool
+
+    private var sizeText: String {
+        let d = session.document
+        return "(\(MeasureUnit.current.compactSize(d.widthMM, d.heightMM)))\(session.isDirty ? "*" : "")"
+    }
+
+    private var sizeLabel: some View {
+        Text(sizeText)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
+            .help(session.isDirty ? "Unsaved changes" : "Saved")
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if isEditing {
+                TextField("Label name", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor, lineWidth: 1.5))
+                    .frame(minWidth: 120, maxWidth: 260)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .focused($fieldFocused)
+                    .onSubmit(commit)
+                    .onExitCommand { isEditing = false }
+                    .onChange(of: fieldFocused) { _, focused in
+                        if !focused && isEditing { commit() }
+                    }
+                sizeLabel
+            } else {
+                Button(action: beginEditing) {
+                    HStack(spacing: 5) {
+                        Text(session.displayName).lineLimit(1)
+                        sizeLabel
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(isHovering ? 0.07 : 0)))
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .offset(x: 16)
+                            .opacity(isHovering ? 1 : 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .onHover { isHovering = $0 }
+                .help("Click to rename")
+            }
+        }
+        .onChange(of: session.fileURL) { _, _ in isEditing = false }
+    }
+
+    private func beginEditing() {
+        draft = session.displayName
+        isHovering = false
+        isEditing = true
+        DispatchQueue.main.async { fieldFocused = true }
+    }
+
+    private func commit() {
+        guard isEditing else { return }
+        isEditing = false
+        session.renameLabel(to: draft)
     }
 }
