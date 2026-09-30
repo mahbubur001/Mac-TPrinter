@@ -37,8 +37,8 @@ struct MediaSettings: View {
         HStack(alignment: .top, spacing: 16) {
             libraryColumn
                 .frame(width: 290)
-            if editing != nil {
-                MediaEditor(media: Binding($editing)!, isNew: isNew, categories: library.categories, isDirty: isDirty,
+            if let current = editing {
+                MediaEditor(media: Binding(get: { editing ?? current }, set: { editing = $0 }), isNew: isNew, categories: library.categories, isDirty: isDirty,
                             isInUse: editing?.name == session.document.mediaName && !isNew) { item in
                     library.save(item)
                     editing = item

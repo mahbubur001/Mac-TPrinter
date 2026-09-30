@@ -31,9 +31,11 @@ struct NewLabelFlow: View {
             footer
         }
         .background(Theme.appBackground)
-        .sheet(item: $newMedia) { _ in
+        .sheet(item: $newMedia) { draft in
             ScrollView {
-                MediaEditor(media: Binding($newMedia)!, isNew: true, categories: library.categories) { saved in
+                // Not `Binding($newMedia)!`: the sheet body is re-evaluated after `newMedia` is set to nil on dismiss.
+                MediaEditor(media: Binding(get: { newMedia ?? draft }, set: { newMedia = $0 }),
+                            isNew: true, categories: library.categories) { saved in
                     library.save(saved)
                     choose(saved)
                     newMedia = nil
