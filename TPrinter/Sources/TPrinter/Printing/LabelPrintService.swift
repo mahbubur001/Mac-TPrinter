@@ -27,7 +27,11 @@ enum LabelPrintService {
                 ? LabelRasterizer.render(document)
                 : LabelRasterizer.renderSheet(document, cellOrigins: cells)
             guard let bitmap else { throw LabelPrintError.renderFailed }
-            tspl.bitmap(x: 0, y: 0, widthBytes: bitmap.widthBytes, height: bitmap.height, packedRows: bitmap.rows)
+            // CLS clears the page, so only the black parts need sending.
+            for strip in bitmap.inkStrips() {
+                tspl.bitmap(x: strip.xByte * 8, y: strip.y, widthBytes: strip.bitmap.widthBytes,
+                            height: strip.bitmap.height, packedRows: strip.bitmap.rows)
+            }
         case .nativeTSPL:
             // The same design in every cell, shifted to the cell's origin.
             for origin in cells {

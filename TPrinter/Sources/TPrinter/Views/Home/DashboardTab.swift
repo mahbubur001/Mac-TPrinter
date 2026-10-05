@@ -46,6 +46,8 @@ struct DashboardTab: View {
     // MARK: Data
 
     private var ready: Bool { bluetooth.connection.isReady }
+    /// Header pill colour: a selected printer whose last job failed isn't shown as green.
+    private var healthy: Bool { ready && !bluetooth.isNotResponding }
 
     /// Labels printed on each of the last 7 days (oldest first; the last is today).
     private var week: [(day: Date, labels: Int)] {
@@ -88,14 +90,14 @@ struct DashboardTab: View {
             }
             Spacer()
             HStack(spacing: 7) {
-                Circle().fill(ready ? Theme.ledReady : Theme.ledOff).frame(width: 8, height: 8)
-                    .overlay(Circle().strokeBorder((ready ? Theme.ledReady : Theme.ledOff).opacity(0.3), lineWidth: 3).padding(-3))
-                Text(ready ? "\(bluetooth.displayName) ready" : bluetooth.statusText).fontWeight(.semibold)
+                Circle().fill(healthy ? Theme.ledReady : Theme.ledOff).frame(width: 8, height: 8)
+                    .overlay(Circle().strokeBorder((healthy ? Theme.ledReady : Theme.ledOff).opacity(0.3), lineWidth: 3).padding(-3))
+                Text(bluetooth.headline).fontWeight(.semibold)
             }
             .font(.callout)
-            .foregroundStyle(ready ? Theme.ledReady : .secondary)
+            .foregroundStyle(healthy ? Theme.ledReady : .secondary)
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .background((ready ? Theme.ledReady : Color.primary).opacity(ready ? 0.13 : 0.06), in: Capsule())
+            .background((healthy ? Theme.ledReady : Color.primary).opacity(healthy ? 0.13 : 0.06), in: Capsule())
         }
     }
 

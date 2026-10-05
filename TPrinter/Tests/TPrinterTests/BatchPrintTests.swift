@@ -64,7 +64,7 @@ struct SingleLabelJobTests {
         let text = String(decoding: try LabelPrintService.job(for: document), as: UTF8.self)
         #expect(text.components(separatedBy: "PRINT ").count - 1 == 1)
         #expect(text.hasSuffix("PRINT 1,1\r\n"))
-        #expect(text.components(separatedBy: "BITMAP ").count - 1 == 1)
+        #expect(text.contains("BITMAP "))
     }
 
     @MainActor @Test func filledRowGoesIntoTheJob() throws {

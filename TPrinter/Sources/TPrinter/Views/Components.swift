@@ -46,7 +46,7 @@ extension PrinterBluetoothManager {
         if isSending { return "Printing" }
         if bluetoothState == .unauthorized { return "Bluetooth access is off" }
         switch connection {
-        case .ready: return "Ready"
+        case .ready: return classicStatus ?? "Ready"
         case .connecting: return "Connecting"
         case .discovering: return "Setting up"
         case .failed: return "Not reachable"
@@ -57,11 +57,30 @@ extension PrinterBluetoothManager {
     var ledState: StatusLED.State {
         if isSending || isQueueRunning { return .busy }
         switch connection {
-        case .ready: return .ready
+        case .ready: return isNotResponding ? .problem : .ready
         case .connecting, .discovering: return .busy
         case .failed: return .problem
         case .idle: return .off
         }
+    }
+
+    /// The selected Classic printer's last job couldn't reach it (off, out of range, or hung).
+    var isNotResponding: Bool { connectedClassicAddress != nil && classicLink == .notResponding }
+
+    /// Classic printers aren't linked between jobs, so "Ready" would claim more than the app knows.
+    private var classicStatus: String? {
+        guard connectedClassicAddress != nil else { return nil }
+        switch classicLink {
+        case .connected: return "Connected"
+        case .notResponding: return "Not responding"
+        case .unknown: return "Paired"
+        }
+    }
+
+    /// One line for headers: "RP310-D157 ready", "RP310-D157 paired", "RP310-D157 not responding".
+    var headline: String {
+        guard connection.isReady, !isSending, !isQueueRunning else { return statusText }
+        return "\(displayName) \((classicStatus ?? "ready").lowercased())"
     }
 
     var connectionKind: String {

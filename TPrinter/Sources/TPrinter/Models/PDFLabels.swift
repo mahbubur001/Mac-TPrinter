@@ -90,9 +90,12 @@ enum PDFLabels {
             let width = Int(size.width * scale), height = Int(size.height * scale)
             guard let context = whiteContext(width: width, height: height) else { return nil }
             context.interpolationQuality = .high
-            let transform = pdfPage.getDrawingTransform(.cropBox, rect: CGRect(x: 0, y: 0, width: width, height: height),
-                                                        rotate: 0, preserveAspectRatio: true)
-            context.concatenate(transform)
+            // getDrawingTransform only ever shrinks a page, never enlarges it: asked to fill the canvas, it
+            // drew a 3 in label at 1 px per point (~220 px for a 600-dot label → broken text). So scale here
+            // and let it do only the rotation, at the page's own size.
+            context.scaleBy(x: CGFloat(width) / size.width, y: CGFloat(height) / size.height)
+            context.concatenate(pdfPage.getDrawingTransform(.cropBox, rect: CGRect(origin: .zero, size: size),
+                                                            rotate: 0, preserveAspectRatio: true))
             context.drawPDFPage(pdfPage)
             return context.makeImage()
         }

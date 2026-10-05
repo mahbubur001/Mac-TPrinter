@@ -9,6 +9,53 @@ struct MonochromeBitmap: Equatable {
     let rows: Data
 
     var widthDots: Int { widthBytes * 8 }
+
+    /// One piece of `inkStrips`: a bitmap placed at (`xByte` × 8, `y`) dots.
+    struct Strip: Equatable {
+        let xByte: Int
+        let y: Int
+        let bitmap: MonochromeBitmap
+    }
+
+    /// Only the parts with black dots: horizontal strips of `stripHeight` rows, each cut into pieces
+    /// around its white gaps (a gap shorter than one `BITMAP` header stays in), all-white areas dropped.
+    /// A 3 × 3 in shipping label is 47 KB as one bitmap, and the RP310 dropped the Bluetooth channel
+    /// partway through jobs that big (2026-10-05); as strips it's ~21 KB.
+    func inkStrips(stripHeight: Int = 8) -> [Strip] {
+        guard widthBytes > 0, stripHeight > 0 else { return [] }
+        /// Bytes `BITMAP x,y,w,h,0,` + CRLF cost, so a white gap is only worth skipping when wider.
+        let headerBytes = 26
+        let bytes = [UInt8](rows)
+        var strips: [Strip] = []
+        for top in stride(from: 0, to: height, by: stripHeight) {
+            let bottom = min(top + stripHeight, height)
+            var ink = [Bool](repeating: false, count: widthBytes)
+            for y in top..<bottom {
+                let row = y * widthBytes
+                for column in 0..<widthBytes where bytes[row + column] != 0xFF { ink[column] = true }
+            }
+            var column = 0
+            while column < widthBytes {
+                guard ink[column] else { column += 1; continue }
+                var last = column
+                while true {
+                    var next = last + 1
+                    while next < widthBytes, !ink[next] { next += 1 }
+                    guard next < widthBytes, (next - last - 1) * (bottom - top) <= headerBytes else { break }
+                    last = next
+                }
+                var data = Data(capacity: (last - column + 1) * (bottom - top))
+                for y in top..<bottom {
+                    let row = y * widthBytes
+                    data.append(contentsOf: bytes[(row + column)...(row + last)])
+                }
+                strips.append(Strip(xByte: column, y: top,
+                                    bitmap: MonochromeBitmap(widthBytes: last - column + 1, height: bottom - top, rows: data)))
+                column = last + 1
+            }
+        }
+        return strips
+    }
 }
 
 enum LabelRasterizer {

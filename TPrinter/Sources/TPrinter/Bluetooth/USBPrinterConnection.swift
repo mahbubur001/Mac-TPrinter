@@ -23,6 +23,11 @@ final class USBPrinterConnection {
     var onEvent: ((String) -> Void)?
 
     private let queue = DispatchQueue(label: "TPrinter.usb")
+    /// Jobs are numbered on the main queue; `cancel()` marks every job up to the latest as stopped,
+    /// which the write loop checks between chunks.
+    private var lastJob = 0
+    private let cancelLock = NSLock()
+    private var cancelledThrough = 0
     /// Bytes per bulk write; progress is reported between chunks.
     private static let chunkSize = 16 * 1024
     /// How long to wait for the printer's status after the data is out.
@@ -33,9 +38,10 @@ final class USBPrinterConnection {
     }
 
     enum USBError: LocalizedError {
-        case notFound(String), noBulkOut, io(String)
+        case notFound(String), noBulkOut, io(String), cancelled
         var errorDescription: String? {
             switch self {
+            case .cancelled: "stopped"
             case .notFound(let name): "\(name) isn't connected by USB any more."
             case .noBulkOut: "The printer's USB interface has no data endpoint."
             case .io(let message): "USB: \(message)"
@@ -102,9 +108,11 @@ final class USBPrinterConnection {
     /// Sends one job. `progress` (0…1) and `completion` (nil = sent) are called on the main queue.
     func send(_ data: Data, progress: @escaping (Double) -> Void, completion: @escaping (Error?) -> Void) {
         let info = info
+        lastJob += 1
+        let job = lastJob
         queue.async { [weak self] in
             do {
-                try self?.write(data, info: info) { fraction in DispatchQueue.main.async { progress(fraction) } }
+                try self?.write(data, info: info, job: job) { fraction in DispatchQueue.main.async { progress(fraction) } }
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 DispatchQueue.main.async { completion(error) }
@@ -112,7 +120,15 @@ final class USBPrinterConnection {
         }
     }
 
-    private func write(_ data: Data, info: USBPrinterInfo, progress: (Double) -> Void) throws {
+    /// Stops the job being sent (Stop): no more chunks go out after the current one.
+    func cancel() {
+        cancelLock.withLock { cancelledThrough = lastJob }
+    }
+
+    private func isCancelled(_ job: Int) -> Bool { cancelLock.withLock { job <= cancelledThrough } }
+
+    private func write(_ data: Data, info: USBPrinterInfo, job: Int, progress: (Double) -> Void) throws {
+        guard !isCancelled(job) else { throw USBError.cancelled }
         var service: io_service_t = 0
         Self.forEachInterface { candidate, candidateInfo in
             guard candidateInfo.id == info.id else { return false }
@@ -146,6 +162,7 @@ final class USBPrinterConnection {
 
         var offset = 0
         while offset < data.count {
+            guard !isCancelled(job) else { throw USBError.cancelled }
             let end = min(offset + Self.chunkSize, data.count)
             let chunk = NSMutableData(data: data.subdata(in: offset..<end))
             var sent = 0

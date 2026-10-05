@@ -501,6 +501,23 @@ struct PDFLabelsTests {
         #expect(uprightSize.height > uprightSize.width)
     }
 
+    /// The page must be scaled up to the requested size, not drawn at 1 px per point in a corner
+    /// (a 3 in label came out ~220 px wide for a 600-dot print, and small text broke apart).
+    @Test func pagesRenderAtTheRequestedSize() throws {
+        let page = try #require(PDFLabels.pages(in: [try makePDF()]).first)
+        let image = try #require(PDFLabels.render(page, longestSide: 1200))
+        #expect(image.height == 1200)
+        let context = try #require(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                             bytesPerRow: image.width, space: CGColorSpaceCreateDeviceGray(),
+                                             bitmapInfo: CGImageAlphaInfo.none.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try #require(context.data?.assumingMemoryBound(to: UInt8.self))
+        // The black box spans 10 %…90 % of the page width; at 85 % it must be black, at 95 % white.
+        let row = image.height / 2 * image.width
+        #expect(pixels[row + image.width * 85 / 100] < 50)
+        #expect(pixels[row + image.width * 95 / 100] > 200)
+    }
+
     @Test func labelPrintsAsOneBitmapJob() throws {
         let page = try #require(PDFLabels.pages(in: [try makePDF()]).first)
         let document = try #require(PDFLabels.document(for: page, media: media(width: 100, height: 150), options: .init()))

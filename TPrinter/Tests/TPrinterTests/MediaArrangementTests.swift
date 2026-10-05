@@ -91,7 +91,9 @@ struct MediaPrintingTests {
         document.arrangement.spacingHorizontalMM = 2
         let text = String(decoding: try LabelPrintService.job(for: document), as: UTF8.self)
         #expect(text.contains("SIZE 62.0 mm, 15.0 mm"))
-        #expect(text.contains("BITMAP 0,0,62,120,0,"), "62 mm × 8 dots = 496 dots = 62 bytes wide")
+        let sheet = try #require(LabelRasterizer.renderSheet(document, cellOrigins: document.arrangement.cellOrigins(
+            label: CGSize(width: document.widthMM, height: document.heightMM))))
+        #expect(sheet.widthBytes == 62 && sheet.height == 120, "62 mm × 8 dots = 496 dots = 62 bytes wide")
         #expect(text.components(separatedBy: "PRINT ").count - 1 == 1)
     }
 

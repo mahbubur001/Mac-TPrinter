@@ -112,7 +112,13 @@ struct PrinterChooser: View {
             }
             Spacer()
             if device.connected {
-                StatusPill(state: .ready, text: "Connected")
+                if device.transport == "Classic Bluetooth" {
+                    StatusPill(state: bluetooth.isNotResponding ? .problem : .ready,
+                               text: bluetooth.classicLink == .connected ? "Connected"
+                                   : bluetooth.isNotResponding ? "Not responding" : "Paired")
+                } else {
+                    StatusPill(state: .ready, text: "Connected")
+                }
             } else if isPrinter {
                 Button("Connect", action: device.connect)
             } else if !device.kind.isKnownNonPrinter {

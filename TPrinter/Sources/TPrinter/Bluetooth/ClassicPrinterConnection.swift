@@ -32,6 +32,7 @@ final class ClassicPrinterConnection: NSObject {
         case openFailed(IOReturn)
         case writeFailed(IOReturn)
         case closedEarly
+        case cancelled
 
         var errorDescription: String? {
             switch self {
@@ -41,6 +42,7 @@ final class ClassicPrinterConnection: NSObject {
             case .openFailed(let status): "Could not open the printer channel (\(status.hex)). Is the printer on and in range?"
             case .writeFailed(let status): "Bluetooth write failed (\(status.hex))."
             case .closedEarly: "The printer closed the connection before the job was sent."
+            case .cancelled: "stopped"
             }
         }
     }
@@ -56,6 +58,13 @@ final class ClassicPrinterConnection: NSObject {
     private static let openAttempts = 4
     private static let openTimeout: TimeInterval = 3
     private static let openRetryDelay: TimeInterval = 1
+    /// The SDP query occasionally never calls back (seen 2026-10-05: job stuck before the first byte).
+    private static let sdpTimeout: TimeInterval = 8
+    /// The RP310's "SerialPort" record; used when SDP doesn't answer.
+    private static let fallbackChannelID: BluetoothRFCOMMChannelID = 1
+    /// Send rate cap. Jobs of ~4 KB went fine at full speed, but a 47 KB PDF label made the printer
+    /// drop the channel mid-write (2026-10-05) — its Bluetooth module seems to outrun the printer.
+    private static let bytesPerSecond: Double = 8 * 1024
 
     let address: String
     var name: String { device.name ?? address }
@@ -63,6 +72,13 @@ final class ClassicPrinterConnection: NSObject {
     var onReceive: ((Data) -> Void)?
     /// Called when the channel opens or closes, for the log.
     var onChannelEvent: ((String) -> Void)?
+    /// Called with true when the printer answers (channel opens, data arrives, job done) and false when a
+    /// job couldn't reach it. Between jobs there's no link, so this is the only sign the printer is on.
+    var onReachable: ((Bool) -> Void)?
+    /// Called when an open channel closes (idle, printer side, or error).
+    var onChannelClosed: (() -> Void)?
+    /// An RFCOMM channel to the printer is open right now.
+    var isLinked: Bool { isChannelOpen }
 
     private let device: IOBluetoothDevice
     private var channelID: BluetoothRFCOMMChannelID?
@@ -76,6 +92,8 @@ final class ClassicPrinterConnection: NSObject {
     private var sdpContinuation: ((IOReturn) -> Void)?
 
     // Current job
+    /// Bumped per job so callbacks scheduled for a cancelled job don't act on the next one.
+    private var jobID = 0
     private var bytes: [UInt8] = []
     private var offset = 0
     private var awaitingStatus = false
@@ -109,6 +127,7 @@ final class ClassicPrinterConnection: NSObject {
     func send(_ data: Data, progress: @escaping (Double) -> Void, completion: @escaping (Error?) -> Void) {
         precondition(!isBusy, "one job at a time")
         idleWork?.cancel()
+        jobID += 1
         bytes = [UInt8](data)
         offset = 0
         self.progress = progress
@@ -126,6 +145,16 @@ final class ClassicPrinterConnection: NSObject {
             case .success(let id): openChannel(id)
             }
         }
+    }
+
+    /// Abandons the current job (Stop). Once every byte is out the printer is already printing, so the
+    /// channel stays open; a half-sent or still-opening job closes it so the printer drops the partial data.
+    func cancel() {
+        guard isBusy else { return }
+        let partial = offset < bytes.count
+        sdpContinuation = nil
+        if partial { closeChannel(reason: "closed (job stopped)") }
+        finish(ConnectionError.cancelled)
     }
 
     /// Closes the channel (on disconnect / app quit).
@@ -151,7 +180,15 @@ final class ClassicPrinterConnection: NSObject {
             done(.success(id))
         }
         let status = device.performSDPQuery(self)
-        if status != kIOReturnSuccess { sdpQueryComplete(device, status: status) }
+        if status != kIOReturnSuccess { return sdpQueryComplete(device, status: status) }
+        let job = jobID
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sdpTimeout) { [weak self] in
+            guard let self, sdpContinuation != nil, jobID == job else { return }
+            sdpContinuation = nil
+            onChannelEvent?("No answer to the service query after \(Int(Self.sdpTimeout)) s; trying channel \(Self.fallbackChannelID).")
+            channelID = Self.fallbackChannelID
+            done(.success(Self.fallbackChannelID))
+        }
     }
 
     private func openChannel(_ id: BluetoothRFCOMMChannelID) {
@@ -161,12 +198,12 @@ final class ClassicPrinterConnection: NSObject {
         guard status == kIOReturnSuccess else { return openFailed(status, channel: id) }
         channel = opened
         isWaitingForOpen = true
-        let attempt = openAttempt
+        let attempt = openAttempt, job = jobID
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.openTimeout) { [weak self] in
-            guard let self, isWaitingForOpen, openAttempt == attempt, let stalled = channel else { return }
+            guard let self, isWaitingForOpen, openAttempt == attempt, jobID == job else { return }
             isWaitingForOpen = false
-            stalled.setDelegate(nil)
-            stalled.close()
+            channel?.setDelegate(nil)
+            channel?.close()
             channel = nil
             onChannelEvent?("Channel open timed out (attempt \(attempt)).")
             openFailed(kIOReturnTimeout, channel: id)
@@ -179,15 +216,16 @@ final class ClassicPrinterConnection: NSObject {
             channelID = nil // re-discover next time in case the channel number changed
             return finish(ConnectionError.openFailed(status))
         }
+        let job = jobID
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.openRetryDelay) { [weak self] in
-            guard let self, completion != nil else { return }
+            guard let self, completion != nil, jobID == job else { return }
             openChannel(id)
         }
     }
 
     // MARK: - Job
 
-    /// Writes one MTU-sized chunk per main-loop turn so the UI stays responsive.
+    /// Writes one MTU-sized chunk at a time, paced to `bytesPerSecond`, so the UI stays responsive.
     private func writeNextChunk() {
         guard let channel, completion != nil else { return }
         guard offset < bytes.count else { return waitForStatus() }
@@ -196,12 +234,16 @@ final class ClassicPrinterConnection: NSObject {
             channel.writeSync(buffer.baseAddress! + offset, length: UInt16(length))
         }
         guard status == kIOReturnSuccess else {
-            closeChannel(reason: "write failed")
+            closeChannel(reason: "write failed after \(offset) of \(bytes.count) bytes")
             return finish(ConnectionError.writeFailed(status))
         }
         offset += length
         progress?(Double(offset) / Double(bytes.count))
-        DispatchQueue.main.async { [weak self] in self?.writeNextChunk() }
+        let job = jobID
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(length) / Self.bytesPerSecond) { [weak self] in
+            guard let self, jobID == job else { return }
+            writeNextChunk()
+        }
     }
 
     private func waitForStatus() {
@@ -224,6 +266,9 @@ final class ClassicPrinterConnection: NSObject {
         progress = nil
         bytes = []
         scheduleIdleClose()
+        if (error as? ConnectionError).map({ if case .cancelled = $0 { false } else { true } }) ?? true {
+            onReachable?(error == nil)
+        }
         completion(error)
     }
 
@@ -243,8 +288,10 @@ final class ClassicPrinterConnection: NSObject {
         channel.setDelegate(nil)
         channel.close()
         self.channel = nil
-        if isChannelOpen { onChannelEvent?("Channel \(reason).") }
+        let wasOpen = isChannelOpen
+        if wasOpen { onChannelEvent?("Channel \(reason).") }
         isChannelOpen = false
+        if wasOpen { onChannelClosed?() }
     }
 
     private static func serialChannel(in device: IOBluetoothDevice) -> BluetoothRFCOMMChannelID? {
@@ -253,9 +300,17 @@ final class ClassicPrinterConnection: NSObject {
             var id: BluetoothRFCOMMChannelID = 0
             return record.getRFCOMMChannelID(&id) == kIOReturnSuccess ? id : nil
         }
-        // Prefer the Serial Port Profile record (channel 1 on the RP310), else any RFCOMM service.
-        let serial = records.first { ($0.getServiceName() ?? "").localizedCaseInsensitiveContains("serial") }
-        return serial.flatMap(channel(of:)) ?? records.lazy.compactMap(channel(of:)).first
+        func named(_ record: IOBluetoothSDPServiceRecord, _ text: String) -> Bool {
+            (record.getServiceName() ?? "").localizedCaseInsensitiveContains(text)
+        }
+        // The RP310 prints on channel 1 ("SerialPort"). It also lists "WeChat" on channel 23, which takes
+        // data but never prints it; on 2026-10-05 channel 1 lost its name, the old pick-by-name fell
+        // through to WeChat, and every job vanished. Both records carry the Serial Port UUID.
+        let ids = records.compactMap { record in channel(of: record).map { (record, $0) } }
+        return ids.first { named($0.0, "serial") }?.1
+            ?? ids.first { $0.1 == fallbackChannelID }?.1
+            ?? ids.first { !named($0.0, "wechat") }?.1
+            ?? ids.first?.1
     }
 }
 
@@ -276,7 +331,8 @@ extension ClassicPrinterConnection: IOBluetoothRFCOMMChannelDelegate {
             isWaitingForOpen = false
             if error == kIOReturnSuccess {
                 isChannelOpen = true
-                onChannelEvent?("Channel open (attempt \(openAttempt)).")
+                onChannelEvent?("Channel \(rfcommChannel.getID()) open (attempt \(openAttempt)).")
+                onReachable?(true)
                 writeNextChunk()
             } else if let id = channelID {
                 openFailed(error, channel: id)
@@ -300,6 +356,7 @@ extension ClassicPrinterConnection: IOBluetoothRFCOMMChannelDelegate {
             channel = nil
             isChannelOpen = false
             onChannelEvent?("Printer closed the channel.")
+            onChannelClosed?()
             idleWork?.cancel()
             guard isBusy else { return }
             // All bytes out = the printer has the job; otherwise it was cut off.

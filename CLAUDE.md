@@ -15,6 +15,10 @@ roadmap and current status; keep its checkboxes up to date when finishing work.
     RFCOMM channel 1 ("SerialPort" SDP record) opened directly with IOBluetooth
     (`ClassicPrinterConnection`). Verified 2026-09-24: TSPL text, BITMAP, and the
     app's full image label all print this way.
+    - The printer also lists a **"WeChat" record on RFCOMM channel 23** (also Serial Port UUID). It
+      accepts data but never prints. On 2026-10-05 channel 1's record lost its name, the old
+      pick-by-name fell through to WeChat, and every job vanished. `serialChannel(in:)` now prefers
+      "serial" by name, then channel 1, then anything but WeChat. The log names the channel opened.
     - **Do NOT use `/dev/cu.RP310-D157`.** Writes to it succeed but the data
       never reaches the printer (verified repeatedly). That was the "nothing
       prints" bug.

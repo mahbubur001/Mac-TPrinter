@@ -69,6 +69,10 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
     private(set) var lastQueueDone = 0
     @Published private(set) var classicPrinters: [ClassicPrinterInfo] = []
     @Published private(set) var connectedClassicAddress: String?
+    /// What the app knows about the selected Classic printer. It isn't linked between jobs, so being
+    /// selected says nothing about whether it's switched on.
+    enum ClassicLink { case unknown, connected, notResponding }
+    @Published private(set) var classicLink = ClassicLink.unknown
     /// Printers plugged in by USB (updated on plug / unplug).
     @Published private(set) var usbPrinters: [USBPrinterInfo] = []
     @Published private(set) var connectedUSBID: String?
@@ -85,6 +89,8 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
     private var servicesAwaitingCharacteristics = 0
     private var sendCompletion: ((String?) -> Void)?
     private var queueStopRequested = false
+    /// Bumped per job (and on Stop) so a cancelled job's late callbacks are ignored.
+    private var jobToken = 0
     private var classic: ClassicPrinterConnection?
     private var usb: USBPrinterConnection?
     private var usbWatcher: AnyObject?
@@ -192,10 +198,12 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         pendingTotal = data.count
         sendProgress = 0
         append("Sending \(data.count) bytes to \(printer.info.name) over USB…")
+        let token = jobToken
         printer.send(data) { [weak self] fraction in
-            self?.sendProgress = fraction
+            guard let self, jobToken == token else { return }
+            sendProgress = fraction
         } completion: { [weak self] error in
-            guard let self else { return }
+            guard let self, jobToken == token else { return }
             if let error { failSend(error.localizedDescription) } else { finishSend() }
         }
     }
@@ -211,6 +219,12 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
             let printer = try ClassicPrinterConnection(address: address)
             printer.onReceive = { [weak self] data in self?.append("Printer → \(data.hexString)") }
             printer.onChannelEvent = { [weak self] event in self?.append(event) }
+            printer.onReachable = { [weak self, weak printer] reachable in
+                self?.classicLink = !reachable ? .notResponding : printer?.isLinked == true ? .connected : .unknown
+            }
+            printer.onChannelClosed = { [weak self] in
+                if self?.classicLink == .connected { self?.classicLink = .unknown }
+            }
             classic = printer
             connectedClassicAddress = address
             connection = .ready(printer.name)
@@ -263,6 +277,7 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
             return
         }
         sendCompletion = completion
+        jobToken += 1
         if let usb {
             sendUSB(data, via: usb)
             return
@@ -295,7 +310,15 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         sendQueued(index: 0, count: count, makeJob: makeJob, completion: completion)
     }
 
-    func stopQueue() { queueStopRequested = true }
+    /// Stops the queue and cancels the job being sent, if any.
+    func stopQueue() {
+        queueStopRequested = true
+        guard isSending else { return }
+        jobToken += 1
+        classic?.cancel()
+        usb?.cancel()
+        failSend("stopped")
+    }
 
     var isQueueRunning: Bool { queueProgress != nil }
 
@@ -351,10 +374,12 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         pendingTotal = data.count
         sendProgress = 0
         append("Sending \(data.count) bytes to \(printer.name)…")
+        let token = jobToken
         printer.send(data) { [weak self] fraction in
-            self?.sendProgress = fraction
+            guard let self, jobToken == token else { return }
+            sendProgress = fraction
         } completion: { [weak self] error in
-            guard let self else { return }
+            guard let self, jobToken == token else { return }
             if let error {
                 failSend(error.localizedDescription)
             } else {
@@ -367,6 +392,7 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         classic?.close()
         classic = nil
         connectedClassicAddress = nil
+        classicLink = .unknown
     }
 
     private func reconnectToLastClassicPrinter() {
@@ -409,7 +435,7 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         pending.removeAll()
         awaitingWriteResponse = false
         sendProgress = nil
-        append("Send failed: \(message)")
+        append(message == "stopped" ? "Job stopped." : "Send failed: \(message)")
         takeCompletion()?(message)
     }
 

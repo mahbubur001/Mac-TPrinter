@@ -27,6 +27,44 @@ struct TSPLCommandBuilderTests {
 }
 
 struct LabelRasterizerTests {
+    @Test func inkStripsDropWhiteAndTrimColumns() {
+        // 4 bytes wide, 4 rows: row 0 white, row 1 black in byte 1, rows 2–3 white.
+        var rows = Data(repeating: 0xFF, count: 16)
+        rows[4 + 1] = 0x0F
+        let bitmap = MonochromeBitmap(widthBytes: 4, height: 4, rows: rows)
+        #expect(bitmap.inkStrips(stripHeight: 2) == [
+            .init(xByte: 1, y: 0, bitmap: MonochromeBitmap(widthBytes: 1, height: 2, rows: Data([0xFF, 0x0F]))),
+        ])
+        #expect(MonochromeBitmap(widthBytes: 4, height: 4, rows: Data(repeating: 0xFF, count: 16)).inkStrips().isEmpty)
+    }
+
+    @Test func inkStripsSplitAtWideWhiteGaps() {
+        // One row, 40 bytes: black at both ends, 38 white bytes between (wider than a BITMAP header).
+        var rows = Data(repeating: 0xFF, count: 40)
+        rows[0] = 0x00
+        rows[39] = 0x00
+        let strips = MonochromeBitmap(widthBytes: 40, height: 1, rows: rows).inkStrips()
+        #expect(strips.map(\.xByte) == [0, 39])
+        #expect(strips.allSatisfy { $0.bitmap.widthBytes == 1 })
+    }
+
+    @Test func inkStripsCoverEveryBlackDot() {
+        // Random-ish pattern: redrawing the strips onto white must give back the original.
+        let widthBytes = 7, height = 37
+        let rows = Data((0..<(widthBytes * height)).map { $0 % 5 == 0 ? UInt8(truncatingIfNeeded: $0 * 37) : 0xFF })
+        let bitmap = MonochromeBitmap(widthBytes: widthBytes, height: height, rows: rows)
+        var redrawn = [UInt8](repeating: 0xFF, count: rows.count)
+        for strip in bitmap.inkStrips(stripHeight: 8) {
+            let part = [UInt8](strip.bitmap.rows)
+            for y in 0..<strip.bitmap.height {
+                for x in 0..<strip.bitmap.widthBytes {
+                    redrawn[(strip.y + y) * widthBytes + strip.xByte + x] = part[y * strip.bitmap.widthBytes + x]
+                }
+            }
+        }
+        #expect(Data(redrawn) == rows)
+    }
+
     @Test func blackPixelsBecomeZeroBits() throws {
         // 16×2 image: left half black, right half white.
         let context = try #require(CGContext(data: nil, width: 16, height: 2, bitsPerComponent: 8, bytesPerRow: 16,
