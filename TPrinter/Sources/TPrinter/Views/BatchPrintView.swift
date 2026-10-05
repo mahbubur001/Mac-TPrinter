@@ -147,7 +147,8 @@ final class BatchPrintModel: ObservableObject {
             onFinish(finishedJobs, error)
             isPrinting = false
             if let error {
-                status = error == "stopped" ? "Stopped after \(finishedJobs) labels." : "Stopped: \(error)"
+                status = error == "stopped" ? PrinterBluetoothManager.stoppedText(after: finishedJobs, of: rows.count * copies) + "."
+                    : "Stopped: \(error)"
             } else {
                 status = "Printed \(finishedJobs) labels."
             }

@@ -119,6 +119,8 @@ final class ClassicPrinterConnection: NSObject {
     }
 
     var isBusy: Bool { completion != nil }
+    /// Every byte of the current job is out: the printer has it and will print it whatever we do.
+    var hasSentJob: Bool { isBusy && awaitingStatus }
 
     /// Streams `data` over the (reused) channel and completes when the printer reports the job done.
     func send(_ data: Data, progress: @escaping (Double) -> Void, completion: @escaping (Error?) -> Void) {

@@ -56,6 +56,13 @@ struct LabelFieldsTests {
     }
 }
 
+struct StopSummaryTests {
+    @MainActor @Test func saysWhereItStopped() {
+        #expect(PrinterBluetoothManager.stoppedText(after: 3, of: 10) == "Stopped after 3 of 10 labels")
+        #expect(PrinterBluetoothManager.stoppedText(after: 0, of: 1) == "Stopped after 0 of 1 label")
+    }
+}
+
 struct SingleLabelJobTests {
     /// Multi-label jobs misplace labels on the RP310, so every job must hold exactly one label.
     @MainActor @Test func copiesNeverGoIntoOneJob() throws {

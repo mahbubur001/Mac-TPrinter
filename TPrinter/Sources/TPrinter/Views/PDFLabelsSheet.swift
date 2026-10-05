@@ -311,7 +311,7 @@ struct PDFLabelsSheet: View {
             isPrinting = false
             switch error {
             case nil: status = "Printed \(printed) label\(printed == 1 ? "" : "s")."
-            case "stopped": status = "Stopped after \(printed) label\(printed == 1 ? "" : "s")."
+            case "stopped": status = PrinterBluetoothManager.stoppedText(after: printed, of: chosen.count * copies) + "."
             case let message?: status = "Stopped: \(message)"
             }
         }

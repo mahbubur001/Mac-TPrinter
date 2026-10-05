@@ -67,6 +67,14 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var queueProgress: (done: Int, total: Int)?
     /// Jobs completed by the last queue (available in its completion handler).
     private(set) var lastQueueDone = 0
+    /// Jobs the last queue was asked to send.
+    private(set) var lastQueueTotal = 0
+    /// "Stopped after 3 of 10 labels", shown for a few seconds after the user stops a queue.
+    @Published private(set) var stopSummary: String?
+
+    static func stoppedText(after done: Int, of total: Int) -> String {
+        "Stopped after \(done) of \(total) label\(total == 1 ? "" : "s")"
+    }
     @Published private(set) var classicPrinters: [ClassicPrinterInfo] = []
     @Published private(set) var connectedClassicAddress: String?
     /// What the app knows about the selected Classic printer. It isn't linked between jobs, so being
@@ -305,15 +313,18 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
     func sendQueue(count: Int, makeJob: @escaping (Int) throws -> Data, completion: ((String?) -> Void)? = nil) {
         guard count > 0, queueProgress == nil, !isSending else { return }
         queueStopRequested = false
+        stopSummary = nil
+        lastQueueTotal = count
         queueProgress = (0, count)
         append("Printing \(count) labels, one job each…")
         sendQueued(index: 0, count: count, makeJob: makeJob, completion: completion)
     }
 
-    /// Stops the queue and cancels the job being sent, if any.
+    /// Stops the queue and cancels the job being sent, if any. A job the printer already has in full
+    /// prints anyway, so it's left to finish and counted.
     func stopQueue() {
         queueStopRequested = true
-        guard isSending else { return }
+        guard isSending, classic?.hasSentJob != true else { return }
         jobToken += 1
         classic?.cancel()
         usb?.cancel()
@@ -326,7 +337,14 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         func end(_ error: String?) {
             lastQueueDone = index
             queueProgress = nil
-            append(error.map { "Stopped after \(index) of \(count) labels: \($0)" } ?? "Printed \(count) labels.")
+            append(error.map { "\(Self.stoppedText(after: index, of: count)): \($0)" } ?? "Printed \(count) labels.")
+            if error == "stopped" {
+                let summary = Self.stoppedText(after: index, of: count)
+                stopSummary = summary
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                    if self?.stopSummary == summary { self?.stopSummary = nil }
+                }
+            }
             completion?(error)
         }
         guard index < count else { return end(nil) }

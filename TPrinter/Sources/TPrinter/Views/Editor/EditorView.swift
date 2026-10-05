@@ -245,6 +245,8 @@ private struct EditorTopBar: View {
                 if let queue = bluetooth.queueProgress {
                     ProgressView(value: Double(queue.done), total: Double(queue.total)).frame(width: 70)
                     Button { bluetooth.stopQueue() } label: { Image(systemName: "stop.circle") }.help("Stop printing")
+                } else if let stopped = bluetooth.stopSummary {
+                    Text(stopped).font(.caption).foregroundStyle(.secondary)
                 }
                 Menu { PrinterChooserMenu() } label: {
                     StatusPill(state: bluetooth.ledState, text: bluetooth.connection.isReady ? bluetooth.displayName : bluetooth.statusText)

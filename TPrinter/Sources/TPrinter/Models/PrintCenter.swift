@@ -30,7 +30,8 @@ final class PrintCenter: ObservableObject {
             try LabelPrintService.job(for: document.advancingCounters(by: index))
         } completion: { [weak self] error in
             guard let self else { return }
-            record(name: name, document: document, labels: copies, printer: printerName, error: error, kind: .single)
+            record(name: name, document: document, labels: error == nil ? copies : printer.lastQueueDone, total: copies,
+                   printer: printerName, error: error, kind: .single)
             completion?(error)
         }
     }
@@ -46,24 +47,29 @@ final class PrintCenter: ObservableObject {
         } completion: { [weak self] error in
             guard let self else { return }
             let printed = printer.lastQueueDone
-            record(name: name, document: sample, labels: error == nil ? count : printed, printer: printerName,
-                   error: error, kind: kind)
+            record(name: name, document: sample, labels: error == nil ? count : printed, total: count,
+                   printer: printerName, error: error, kind: kind)
             completion?(printed, error)
         }
     }
 
     /// Records a finished batch (the batch model runs the queue itself so it can fill each row).
     func recordBatch(name: String, template: LabelDocument, labels: Int, printed: Int, error: String?) {
-        record(name: name, document: template, labels: error == nil ? labels : printed, printer: printerName,
-               error: error, kind: .batch)
+        record(name: name, document: template, labels: error == nil ? labels : printed, total: labels,
+               printer: printerName, error: error, kind: .batch)
     }
 
-    private func record(name: String, document: LabelDocument, labels: Int, printer: String, error: String?, kind: PrintRecord.Kind) {
+    /// - Parameters: labels: jobs that printed; total: jobs asked for.
+    private func record(name: String, document: LabelDocument, labels: Int, total: Int, printer: String, error: String?,
+                        kind: PrintRecord.Kind) {
         let batch = kind != .single
         let result: PrintRecord.Result = error == nil ? .printed : (error == "stopped" ? .stopped : .failed)
+        // Labels, not jobs: a row of a multi-label arrangement is one job.
+        let stopped = PrinterBluetoothManager.stoppedText(after: labels * document.arrangement.cellCount,
+                                                          of: total * document.arrangement.cellCount)
         history.add(PrintRecord(date: Date(), templateName: name, labels: labels * document.arrangement.cellCount,
                                 mediaName: document.mediaTitle, printer: printer, result: result,
-                                detail: error == "stopped" ? "" : (error ?? ""), wasBatch: batch,
+                                detail: error == "stopped" ? stopped : (error ?? ""), wasBatch: batch,
                                 template: try? LabelTemplate.encode(document), kind: kind))
         let count = labels * document.arrangement.cellCount
         switch result {
@@ -71,7 +77,7 @@ final class PrintCenter: ObservableObject {
             notices.post(.success, batch ? "Batch “\(name)” finished" : "Printed “\(name)”",
                          "\(count) label\(count == 1 ? "" : "s") on \(printer)", topic: .prints)
         case .stopped:
-            notices.post(.warning, "Printing “\(name)” stopped", "\(count) label\(count == 1 ? "" : "s") printed before stopping", topic: .prints)
+            notices.post(.warning, "Printing “\(name)” stopped", stopped, topic: .prints)
         case .failed:
             notices.post(.problem, "Couldn't print “\(name)”", error ?? "", topic: .prints)
         }
