@@ -62,9 +62,6 @@ final class ClassicPrinterConnection: NSObject {
     private static let sdpTimeout: TimeInterval = 8
     /// The RP310's "SerialPort" record; used when SDP doesn't answer.
     private static let fallbackChannelID: BluetoothRFCOMMChannelID = 1
-    /// Send rate cap. Jobs of ~4 KB went fine at full speed, but a 47 KB PDF label made the printer
-    /// drop the channel mid-write (2026-10-05) — its Bluetooth module seems to outrun the printer.
-    private static let bytesPerSecond: Double = 8 * 1024
 
     let address: String
     var name: String { device.name ?? address }
@@ -225,7 +222,7 @@ final class ClassicPrinterConnection: NSObject {
 
     // MARK: - Job
 
-    /// Writes one MTU-sized chunk at a time, paced to `bytesPerSecond`, so the UI stays responsive.
+    /// Writes one MTU-sized chunk per main-loop turn so the UI stays responsive.
     private func writeNextChunk() {
         guard let channel, completion != nil else { return }
         guard offset < bytes.count else { return waitForStatus() }
@@ -240,7 +237,7 @@ final class ClassicPrinterConnection: NSObject {
         offset += length
         progress?(Double(offset) / Double(bytes.count))
         let job = jobID
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(length) / Self.bytesPerSecond) { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self, jobID == job else { return }
             writeNextChunk()
         }
