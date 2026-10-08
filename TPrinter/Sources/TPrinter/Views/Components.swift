@@ -57,7 +57,7 @@ extension PrinterBluetoothManager {
     var ledState: StatusLED.State {
         if isSending || isQueueRunning { return .busy }
         switch connection {
-        case .ready: return isNotResponding ? .problem : .ready
+        case .ready: return isNotResponding ? .problem : classicIsChecking ? .busy : .ready
         case .connecting, .discovering: return .busy
         case .failed: return .problem
         case .idle: return .off
@@ -67,13 +67,17 @@ extension PrinterBluetoothManager {
     /// The selected Classic printer's last job couldn't reach it (off, out of range, or hung).
     var isNotResponding: Bool { connectedClassicAddress != nil && classicLink == .notResponding }
 
-    /// Classic printers aren't linked between jobs, so "Ready" would claim more than the app knows.
-    private var classicStatus: String? {
+    /// First "is it on?" check for the selected Classic printer still running.
+    private var classicIsChecking: Bool { connectedClassicAddress != nil && classicLink == .unknown }
+
+    /// Classic printers aren't linked between jobs; the status comes from the periodic power check.
+    var classicStatus: String? {
         guard connectedClassicAddress != nil else { return nil }
         switch classicLink {
         case .connected: return "Connected"
+        case .on: return "Ready"
         case .notResponding: return "Not responding"
-        case .unknown: return "Paired"
+        case .unknown: return "Checking"
         }
     }
 

@@ -77,9 +77,11 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
     }
     @Published private(set) var classicPrinters: [ClassicPrinterInfo] = []
     @Published private(set) var connectedClassicAddress: String?
-    /// What the app knows about the selected Classic printer. It isn't linked between jobs, so being
-    /// selected says nothing about whether it's switched on.
-    enum ClassicLink { case unknown, connected, notResponding }
+    /// What the app knows about the selected Classic printer. It isn't linked between jobs, so it's
+    /// asked every `powerCheckInterval` whether it's on (`checkClassicPrinter`).
+    enum ClassicLink { case unknown, on, connected, notResponding }
+    private static let powerCheckInterval: TimeInterval = 20
+    private var powerCheckTimer: Timer?
     @Published private(set) var classicLink = ClassicLink.unknown
     /// Printers plugged in by USB (updated on plug / unplug).
     @Published private(set) var usbPrinters: [USBPrinterInfo] = []
@@ -228,16 +230,20 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
             printer.onReceive = { [weak self] data in self?.append("Printer → \(data.hexString)") }
             printer.onChannelEvent = { [weak self] event in self?.append(event) }
             printer.onReachable = { [weak self, weak printer] reachable in
-                self?.classicLink = !reachable ? .notResponding : printer?.isLinked == true ? .connected : .unknown
+                self?.classicLink = !reachable ? .notResponding : printer?.isLinked == true ? .connected : .on
             }
             printer.onChannelClosed = { [weak self] in
-                if self?.classicLink == .connected { self?.classicLink = .unknown }
+                if self?.classicLink == .connected { self?.classicLink = .on }
             }
             classic = printer
             connectedClassicAddress = address
             connection = .ready(printer.name)
             UserDefaults.standard.set(address, forKey: Self.lastClassicAddressKey)
             UserDefaults.standard.set("classic", forKey: Self.lastTransportKey)
+            checkClassicPrinter()
+            powerCheckTimer = Timer.scheduledTimer(withTimeInterval: Self.powerCheckInterval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkClassicPrinter() }
+            }
             append("Ready: \(printer.name) (Classic Bluetooth \(address)).")
         } catch {
             connection = .failed(error.localizedDescription)
@@ -406,7 +412,23 @@ final class PrinterBluetoothManager: NSObject, ObservableObject {
         }
     }
 
+    /// Asks the selected Classic printer whether it's on (never while printing) and updates `classicLink`.
+    private func checkClassicPrinter() {
+        guard let printer = classic, !isSending, !isQueueRunning, !printer.isBusy else { return }
+        printer.checkPowerOn { [weak self, weak printer] on in
+            guard let self, let printer, classic === printer, !isSending, !isQueueRunning else { return }
+            let link: ClassicLink = printer.isLinked ? .connected : on ? .on : .notResponding
+            guard link != classicLink else { return }
+            if link == .on || link == .notResponding || classicLink == .notResponding {
+                append(on ? "\(printer.name) is on." : "\(printer.name) didn't answer (off or out of range?).")
+            }
+            classicLink = link
+        }
+    }
+
     private func closeClassic() {
+        powerCheckTimer?.invalidate()
+        powerCheckTimer = nil
         classic?.close()
         classic = nil
         connectedClassicAddress = nil

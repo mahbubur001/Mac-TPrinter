@@ -62,6 +62,9 @@ final class ClassicPrinterConnection: NSObject {
     private static let sdpTimeout: TimeInterval = 8
     /// The RP310's "SerialPort" record; used when SDP doesn't answer.
     private static let fallbackChannelID: BluetoothRFCOMMChannelID = 1
+    /// "Is it on?" check: page timeout in 0.625 ms slots (8000 = 5 s), and a hard limit on top.
+    private static let probePageTimeout: BluetoothHCIPageTimeout = 8000
+    private static let probeTimeout: TimeInterval = 8
 
     let address: String
     var name: String { device.name ?? address }
@@ -87,6 +90,10 @@ final class ClassicPrinterConnection: NSObject {
     private var isWaitingForOpen = false
     private var openAttempt = 0
     private var sdpContinuation: ((IOReturn) -> Void)?
+
+    // "Is it on?" check
+    private var probeDone: ((Bool) -> Void)?
+    private var probeID = 0
 
     // Current job
     /// Bumped per job so callbacks scheduled for a cancelled job don't act on the next one.
@@ -154,6 +161,33 @@ final class ClassicPrinterConnection: NSObject {
         sdpContinuation = nil
         if partial { closeChannel(reason: "closed (job stopped)") }
         finish(ConnectionError.cancelled)
+    }
+
+    /// Checks whether the printer is switched on and in range by opening a baseband link (closed again
+    /// right away), no RFCOMM channel (failed channel opens are what make the RP310 feed blank labels).
+    /// Calls back true if it answered. An open channel or link counts as on without asking.
+    /// (An async remote name request never calls back on macOS 27 — verified 2026-10-08 — so the
+    /// printer always looked "Not responding" until a job opened the channel.)
+    func checkPowerOn(_ done: @escaping (Bool) -> Void) {
+        guard probeDone == nil else { return }
+        if isChannelOpen || device.isConnected() { return done(true) }
+        probeDone = done
+        probeID += 1
+        let probe = probeID
+        guard device.openConnection(self, withPageTimeout: Self.probePageTimeout, authenticationRequired: false)
+                == kIOReturnSuccess else {
+            return finishProbe(false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.probeTimeout) { [weak self] in
+            guard let self, probeID == probe else { return }
+            finishProbe(false)
+        }
+    }
+
+    private func finishProbe(_ answered: Bool) {
+        guard let done = probeDone else { return }
+        probeDone = nil
+        done(answered)
     }
 
     /// Closes the channel (on disconnect / app quit).
@@ -316,6 +350,15 @@ final class ClassicPrinterConnection: NSObject {
 // MARK: - IOBluetooth callbacks (delivered on the main run loop)
 
 extension ClassicPrinterConnection: IOBluetoothRFCOMMChannelDelegate {
+    @objc nonisolated func connectionComplete(_ device: IOBluetoothDevice, status: IOReturn) {
+        MainActor.assumeIsolated {
+            guard probeDone != nil else { return }
+            // Drop the probe link unless a job has started using it.
+            if !isBusy, !isChannelOpen, device.isConnected() { device.closeConnection() }
+            finishProbe(status == kIOReturnSuccess)
+        }
+    }
+
     @objc nonisolated func sdpQueryComplete(_ device: IOBluetoothDevice, status: IOReturn) {
         MainActor.assumeIsolated {
             let continuation = sdpContinuation
