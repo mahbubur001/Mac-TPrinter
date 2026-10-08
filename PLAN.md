@@ -192,6 +192,11 @@ Two print methods:
   and highlights individual settings, tinted row icons, print-method tiles + print-window hint, iCloud /
   data sizes / clear thumbnail cache, About with GitHub, log file and Copy System Info
 - [x] Rename a label from the editor title (click → inline field; renames the file, or names an unsaved label)
+- [x] Classic printer "is it on?" check every 20 s (baseband link, closed right away — no RFCOMM channel):
+  status Checking / Ready / Connected / Not responding. Fixes the false "Not responding" after every
+  reboot (an async remote name request never calls back on macOS 27)
+- [ ] Confirm the 20 s check never makes the printer feed a blank label
+- [ ] Re-pair `RP310-D157-BLE` in System Settings (BLE connect fails: "Peer removed pairing information")
 - [ ] Try with a real Steadfast label PDF on a parcel-size roll (check barcode scans)
 - [ ] Verify EAN-13 / Code 39 scan on printed labels; verify dashed and 0.25 mm lines print cleanly
 
